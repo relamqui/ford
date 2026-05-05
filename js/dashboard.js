@@ -571,6 +571,13 @@ function renderMessages(messages) {
         if (caption) {
             messageContent += `<div class="msg-caption">${escapeHtml(caption)}</div>`;
         }
+    } else if (messageContent.startsWith('[DOC_UPLOADING] ')) {
+        // Estado temporário enquanto o arquivo está sendo enviado ao servidor
+        const docName = messageContent.replace('[DOC_UPLOADING] ', '');
+        messageContent = `<div class="msg-doc" style="display: flex; align-items: center; gap: 8px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px; color: inherit; opacity: 0.6;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/></svg>
+            <span>${escapeHtml(docName)} <em style="font-size:11px;">(Enviando...)</em></span>
+        </div>`;
     } else if (messageContent.startsWith('[DOC_REF] ')) {
         const ref = messageContent.replace('[DOC_REF] ', '');
         const parts = ref.split('|');
@@ -1516,7 +1523,8 @@ async function sendDocumentMessage(file) {
       }
     }
     
-    const tempText = `[DOC_REF] ${targetInstance}|${tempId}|${file.name}`;
+    // Enquanto o upload ocorre, mostra estado 'Enviando...' (sem link clicável)
+    const tempText = `[DOC_UPLOADING] ${file.name}`;
     const newMsg = { id: tempId, text: tempText, type: 'out', time };
     if (!currentChat.messages) currentChat.messages = [];
     currentChat.messages.push(newMsg);
@@ -1549,9 +1557,10 @@ async function sendDocumentMessage(file) {
       const realId = data.msg_id || data.key?.id;
       if (realId) {
         newMsg.id = realId;
+        // Agora atualiza para DOC_REF com o ID real — link de download funcionará
         newMsg.text = `[DOC_REF] ${targetInstance}|${realId}|${file.name}`;
         _pendingDocIds.add(realId);
-        // Re-render para mostrar com link de download correto
+        // Re-render para mostrar o link clicável correto
         renderMessages(currentChat.messages);
       }
       
