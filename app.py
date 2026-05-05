@@ -366,9 +366,22 @@ def add_bot_tag():
     added = False
     
     if filial and setor:
-        ftag = f"{filial}:{setor}"
-        if ftag not in current_tags:
-            current_tags.append(ftag)
+        new_ftag = f"{filial}:{setor}"
+        # Verifica se já existe alguma tag de filial:setor
+        existing_filial_tags = [
+            t for t in current_tags
+            if isinstance(t, str) and ':' in t and not t.lower().startswith('atendente:')
+        ]
+        
+        if new_ftag in current_tags:
+            # Já tem a tag correta — não precisa alterar
+            print(f"[BOT/TAGS] Tag '{new_ftag}' já existe, nenhuma alteração necessária.")
+        else:
+            # Remove qualquer tag Filial:Setor antiga e adiciona a nova
+            for old_tag in existing_filial_tags:
+                current_tags.remove(old_tag)
+                print(f"[BOT/TAGS] Removendo tag antiga: {old_tag}")
+            current_tags.append(new_ftag)
             added = True
     elif filial:
         if filial not in current_tags:
@@ -394,7 +407,7 @@ def add_bot_tag():
             'tags': list(contact.tags)
         }, room='admin')
     else:
-        print(f"[BOT/TAGS] Nenhuma tag para aplicar (filial={filial}, setor={setor}, tag={custom_tag})")
+        print(f"[BOT/TAGS] Nenhuma tag alterada (filial={filial}, setor={setor}, tag={custom_tag})")
         
     return jsonify({'success': True, 'contact_id': contact.id, 'tags': contact.tags}), 200
 
@@ -2053,7 +2066,22 @@ def release_chat(id):
             _s = Setor.query.get(user.setor_id)
             _setor_r = _s.name if _s else None
             
-    contact.tags = ['BOT']
+    # Preserva a tag de Filial:Setor do atendimento finalizado
+    # para que o cliente retorne à fila correta.
+    # Remove apenas a tag do atendente (Atendente:NomeAtendente) e mantém BOT + Filial:Setor
+    current_tags = list(contact.tags or [])
+    
+    # Remove tags de atendente (ex: "Atendente:Fulano")
+    preserved_tags = [
+        t for t in current_tags
+        if not (isinstance(t, str) and t.lower().startswith('atendente:'))
+    ]
+    
+    # Garante que BOT está presente
+    if 'BOT' not in preserved_tags:
+        preserved_tags.insert(0, 'BOT')
+    
+    contact.tags = preserved_tags
     flag_modified(contact, 'tags')
     
     db_sql.session.commit()
