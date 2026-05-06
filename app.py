@@ -2442,9 +2442,30 @@ def chat_transfer():
         print(f"Erro ao disparar webhook de transferência n8n: {e}")
         return jsonify({'error': 'Erro ao comunicar com n8n'}), 500
         
-    # Atualiza a tag localmente para refletir o novo setor e apaga as antigas
-    tag_name = f"{filial}:{setor}"
-    contact.tags = [tag_name]
+    # Atualiza as tags para refletir o novo setor de destino
+    # MANTÉM a tag do setor de origem (do usuário que fez a transferência)
+    # para que o setor de origem ainda possa visualizar/acompanhar o chat
+    tag_destino = f"{filial}:{setor}"
+    tag_origem = None
+    if user.filial and user.setor:
+        tag_origem = f"{user.filial}:{user.setor}"
+    
+    current_tags = list(contact.tags or [])
+    # Remove apenas tags de atendente e BOT; mantém outras tags filial:setor existentes
+    new_tags = [
+        t for t in current_tags
+        if isinstance(t, str)
+        and not t.strip().lower().startswith('atendente:')
+        and t.strip().upper() != 'BOT'
+    ]
+    # Adiciona a tag de destino se ainda não existir
+    if tag_destino not in new_tags:
+        new_tags.append(tag_destino)
+    # Garante que a tag de origem do usuário que transferiu está presente (para leitura)
+    if tag_origem and tag_origem not in new_tags:
+        new_tags.append(tag_origem)
+    
+    contact.tags = new_tags
     flag_modified(contact, 'tags')
         
     # Liberar o atendimento (remover assigned_to)

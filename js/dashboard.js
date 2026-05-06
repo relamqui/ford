@@ -1618,15 +1618,18 @@ function updateAttendanceBar(contact) {
   bar.style.display = 'flex';
   
   if (!isAssigned) {
-    // Chat livre
+    // Chat livre — input travado, aguardando alguém apertar "Atender"
     info.innerHTML = `<span class="att-status-dot free"></span> <span>Chat sem atendente</span>`;
     actions.innerHTML = `<button class="btn-atender" onclick="assignChat()">✋ Atender</button>`;
-    if (inputBar) inputBar.style.display = 'flex';
-    if (inputLocked) inputLocked.style.display = 'none';
+    if (inputBar) inputBar.style.display = 'none';
+    if (inputLocked) {
+      inputLocked.style.display = 'flex';
+      document.getElementById('inputLockedText').textContent = 'Clique em "Atender" para começar a responder';
+    }
     const btnTransfer = document.getElementById('btnTransferChat');
-    if (btnTransfer) btnTransfer.style.display = 'flex';
+    if (btnTransfer) btnTransfer.style.display = 'none';
   } else if (isAssignedToMe) {
-    // Eu estou atendendo
+    // Eu estou atendendo — input liberado
     info.innerHTML = `<span class="att-status-dot active"></span> <span>Você está atendendo este chat</span>`;
     actions.innerHTML = `<button class="btn-finalizar" onclick="releaseChat()">✖ Finalizar</button>`;
     if (inputBar) inputBar.style.display = 'flex';
@@ -1634,7 +1637,7 @@ function updateAttendanceBar(contact) {
     const btnTransfer = document.getElementById('btnTransferChat');
     if (btnTransfer) btnTransfer.style.display = 'flex';
   } else {
-    // Outro atendente está atendendo
+    // Outro atendente está atendendo — input travado
     info.innerHTML = `<span class="att-status-dot active"></span> <span>Atendido por <span class="att-label">${contact.assigned_name}</span></span>`;
     actions.innerHTML = '';
     if (inputBar) inputBar.style.display = 'none';
