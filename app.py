@@ -123,6 +123,11 @@ class AtendimentoChat(db_sql.Model):
     registro_time_chat = db_sql.Column(db_sql.Text, nullable=True)
     ultimo_setor = db_sql.Column(db_sql.String(255), nullable=True)
     ultimo_atendente = db_sql.Column(db_sql.String(255), nullable=True)
+    # Campos para controle de alertas de tempo de espera
+    alerta_20min_enviado = db_sql.Column(db_sql.Boolean, default=False, nullable=False, server_default='0')
+    alerta_40min_enviado = db_sql.Column(db_sql.Boolean, default=False, nullable=False, server_default='0')
+    # Timestamp ISO de quando o status mudou para 'atendente' (início da espera)
+    atendente_desde = db_sql.Column(db_sql.Text, nullable=True)
 
 # ─── Utils ──────────────────────────────────────────────────────────────────
 def normalize_br_phone(phone_str):
@@ -248,6 +253,19 @@ def migrate_to_sql():
             
             db_sql.session.commit()
             print("Migração concluída.")
+
+        # Migração dos campos de alerta de tempo de espera
+        for col_def in [
+            "ALTER TABLE atendimentos_chat ADD COLUMN alerta_20min_enviado BOOLEAN NOT NULL DEFAULT 0",
+            "ALTER TABLE atendimentos_chat ADD COLUMN alerta_40min_enviado BOOLEAN NOT NULL DEFAULT 0",
+            "ALTER TABLE atendimentos_chat ADD COLUMN atendente_desde TEXT",
+        ]:
+            try:
+                db_sql.session.execute(db_sql.text(col_def))
+                db_sql.session.commit()
+                print(f"[MIGRATE] Coluna adicionada: {col_def.split('ADD COLUMN ')[1].split(' ')[0]}")
+            except Exception:
+                db_sql.session.rollback()
         
         # Garantir que existe pelo menos um ADMIN se o banco estiver vazio
         if User.query.filter_by(role='admin').first() is None:
@@ -266,6 +284,7 @@ def migrate_to_sql():
             print(f"Usuário {admin_email} criado (senha: {admin_pass}).")
 
 migrate_to_sql()
+start_wait_time_monitor()
 
 # ─── Middleware ─────────────────────────────────────────────────────────────
 
@@ -1465,6 +1484,103 @@ def bot_message_webhook():
         return jsonify({'error': str(e)}), 500
 
 import threading
+import time
+
+# ─── Monitor de Tempo de Espera ─────────────────────────────────────────────
+
+WEBHOOK_CHAMAR_URL = 'https://n8n-n8n.ioms5g.easypanel.host/webhook/chamar'
+WEBHOOK_CHAMAR_GERENTE_URL = 'https://n8n-n8n.ioms5g.easypanel.host/webhook/chamar-gerente'
+
+def wait_time_monitor_loop():
+    """Thread em background que monitora clientes aguardando atendimento.
+    Dispara alertas em 20 min (atendentes) e 40 min (gerentes)."""
+    print("[MONITOR] Thread de monitoramento de tempo de espera iniciada.")
+    while True:
+        try:
+            with app.app_context():
+                agora = get_now()
+                pendentes = AtendimentoChat.query.filter_by(status='atendente').all()
+                for reg in pendentes:
+                    if not reg.atendente_desde:
+                        continue
+                    try:
+                        inicio = datetime.datetime.fromisoformat(reg.atendente_desde)
+                        if inicio.tzinfo is None:
+                            inicio = pytz.timezone('America/Sao_Paulo').localize(inicio)
+                        decorrido_min = (agora - inicio).total_seconds() / 60
+
+                        # Busca dados extras do contato para enriquecer o payload
+                        contact_obj = Contact.query.filter_by(phone=reg.numero).order_by(Contact.id).first()
+                        nome_cliente = contact_obj.name if contact_obj else reg.numero
+                        instance_obj = contact_obj.instance if contact_obj else None
+
+                        # Busca filial e setor a partir do atendente
+                        filial_nome = None
+                        setor_nome = None
+                        if reg.atendente:
+                            atend_user = User.query.filter_by(name=reg.atendente).first()
+                            if atend_user:
+                                if atend_user.filial_id:
+                                    _f = Filial.query.get(atend_user.filial_id)
+                                    filial_nome = _f.name if _f else atend_user.filial
+                                if atend_user.setor_id:
+                                    _s = Setor.query.get(atend_user.setor_id)
+                                    setor_nome = _s.name if _s else atend_user.setor
+                                if not filial_nome:
+                                    filial_nome = atend_user.filial
+                                if not setor_nome:
+                                    setor_nome = atend_user.setor
+
+                        payload_base = {
+                            "numero": reg.numero,
+                            "nome_cliente": nome_cliente,
+                            "atendente": reg.atendente or "Sem atendente",
+                            "filial": filial_nome,
+                            "setor": setor_nome,
+                            "instancia": instance_obj,
+                            "minutos_esperando": round(decorrido_min, 1),
+                            "atendente_desde": reg.atendente_desde,
+                        }
+
+                        # ── Alerta 20 minutos — notifica atendentes ──
+                        if decorrido_min >= 20 and not reg.alerta_20min_enviado:
+                            try:
+                                payload_20 = dict(payload_base)
+                                payload_20["nivel_alerta"] = "atendente"
+                                payload_20["mensagem"] = f"Cliente {nome_cliente} aguardando há {round(decorrido_min, 1)} minutos sem atendimento."
+                                requests.post(WEBHOOK_CHAMAR_URL, json=payload_20, timeout=10)
+                                reg.alerta_20min_enviado = True
+                                db_sql.session.commit()
+                                print(f"[MONITOR] Alerta 20min enviado para {reg.numero} ({round(decorrido_min, 1)} min)")
+                            except Exception as e20:
+                                db_sql.session.rollback()
+                                print(f"[MONITOR] Erro ao enviar alerta 20min para {reg.numero}: {e20}")
+
+                        # ── Alerta 40 minutos — notifica gerentes ──
+                        if decorrido_min >= 40 and not reg.alerta_40min_enviado:
+                            try:
+                                payload_40 = dict(payload_base)
+                                payload_40["nivel_alerta"] = "gerente"
+                                payload_40["mensagem"] = f"URGENTE: Cliente {nome_cliente} aguardando há {round(decorrido_min, 1)} minutos sem atendimento."
+                                requests.post(WEBHOOK_CHAMAR_GERENTE_URL, json=payload_40, timeout=10)
+                                reg.alerta_40min_enviado = True
+                                db_sql.session.commit()
+                                print(f"[MONITOR] Alerta 40min (gerente) enviado para {reg.numero} ({round(decorrido_min, 1)} min)")
+                            except Exception as e40:
+                                db_sql.session.rollback()
+                                print(f"[MONITOR] Erro ao enviar alerta 40min para {reg.numero}: {e40}")
+
+                    except Exception as e_reg:
+                        print(f"[MONITOR] Erro ao processar registro {reg.numero}: {e_reg}")
+        except Exception as e_loop:
+            print(f"[MONITOR] Erro no loop de monitoramento: {e_loop}")
+        time.sleep(60)  # Verifica a cada 60 segundos
+
+def start_wait_time_monitor():
+    """Inicia a thread de monitoramento de tempo de espera em background."""
+    t = threading.Thread(target=wait_time_monitor_loop, daemon=True, name="WaitTimeMonitor")
+    t.start()
+    print("[MONITOR] Thread WaitTimeMonitor iniciada com sucesso.")
 
 def fetch_and_update_avatar_async(contact_id, phone, instance):
     def _fetch():
@@ -1894,18 +2010,28 @@ def create_contact():
 
     # Atualiza tabela atendimentos_chat diretamente para bloquear o bot
     try:
+        agora_iso = get_now().isoformat()
         atend_chat = AtendimentoChat.query.filter_by(numero=contact.phone).first()
         if atend_chat:
+            status_anterior = atend_chat.status
             atend_chat.atendente = user.name
             atend_chat.status = 'atendente'
             atend_chat.ultimo_atendente = user.name
+            atend_chat.registro_time_chat = agora_iso
+            if status_anterior != 'atendente':
+                atend_chat.atendente_desde = agora_iso
+                atend_chat.alerta_20min_enviado = False
+                atend_chat.alerta_40min_enviado = False
         else:
             atend_chat = AtendimentoChat(
                 numero=contact.phone,
                 status='atendente',
                 atendente=user.name,
                 ultimo_atendente=user.name,
-                registro_time_chat=get_now().isoformat()
+                registro_time_chat=agora_iso,
+                atendente_desde=agora_iso,
+                alerta_20min_enviado=False,
+                alerta_40min_enviado=False
             )
             db_sql.session.add(atend_chat)
         db_sql.session.commit()
@@ -2036,18 +2162,29 @@ def assign_chat(id):
 
     # Atualiza tabela atendimentos_chat diretamente para bloquear o bot
     try:
+        agora_iso = get_now().isoformat()
         atend_chat = AtendimentoChat.query.filter_by(numero=contact.phone).first()
         if atend_chat:
+            status_anterior = atend_chat.status
             atend_chat.atendente = user.name
             atend_chat.status = 'atendente'
             atend_chat.ultimo_atendente = user.name
+            atend_chat.registro_time_chat = agora_iso
+            # Só reseta o timer de espera se estava em outro status (ex: bot)
+            if status_anterior != 'atendente':
+                atend_chat.atendente_desde = agora_iso
+                atend_chat.alerta_20min_enviado = False
+                atend_chat.alerta_40min_enviado = False
         else:
             atend_chat = AtendimentoChat(
                 numero=contact.phone,
                 status='atendente',
                 atendente=user.name,
                 ultimo_atendente=user.name,
-                registro_time_chat=get_now().isoformat()
+                registro_time_chat=agora_iso,
+                atendente_desde=agora_iso,
+                alerta_20min_enviado=False,
+                alerta_40min_enviado=False
             )
             db_sql.session.add(atend_chat)
         db_sql.session.commit()
@@ -2125,6 +2262,20 @@ def release_chat(id):
     flag_modified(contact, 'tags')
     
     db_sql.session.commit()
+
+    # Resetar alertas de espera ao finalizar o atendimento
+    try:
+        atend_chat_rel = AtendimentoChat.query.filter_by(numero=contact.phone).first()
+        if atend_chat_rel:
+            atend_chat_rel.status = 'finalizado'
+            atend_chat_rel.atendente_desde = None
+            atend_chat_rel.alerta_20min_enviado = False
+            atend_chat_rel.alerta_40min_enviado = False
+            db_sql.session.commit()
+            print(f"[RELEASE] Alertas resetados para {contact.phone}")
+    except Exception as e_rel:
+        db_sql.session.rollback()
+        print(f"Erro ao resetar alertas no release: {e_rel}")
     
     # Corpal Webhook — evento finalizar
     try:
@@ -2284,6 +2435,20 @@ def chat_transfer():
         contact.assigned_name = None
     
     db_sql.session.commit()
+
+    # Resetar alertas de espera ao transferir
+    try:
+        atend_chat_tr = AtendimentoChat.query.filter_by(numero=contact.phone).first()
+        if atend_chat_tr:
+            atend_chat_tr.status = 'bot'
+            atend_chat_tr.atendente_desde = None
+            atend_chat_tr.alerta_20min_enviado = False
+            atend_chat_tr.alerta_40min_enviado = False
+            db_sql.session.commit()
+            print(f"[TRANSFER] Alertas resetados para {contact.phone}")
+    except Exception as e_tr:
+        db_sql.session.rollback()
+        print(f"Erro ao resetar alertas na transferência: {e_tr}")
     
     # Emite evento para os clientes atualizarem
     socketio.emit('chat_tags_updated', {
