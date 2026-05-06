@@ -284,7 +284,6 @@ def migrate_to_sql():
             print(f"Usuário {admin_email} criado (senha: {admin_pass}).")
 
 migrate_to_sql()
-start_wait_time_monitor()
 
 # ─── Middleware ─────────────────────────────────────────────────────────────
 
@@ -1581,6 +1580,9 @@ def start_wait_time_monitor():
     t = threading.Thread(target=wait_time_monitor_loop, daemon=True, name="WaitTimeMonitor")
     t.start()
     print("[MONITOR] Thread WaitTimeMonitor iniciada com sucesso.")
+
+start_wait_time_monitor()
+
 
 def fetch_and_update_avatar_async(contact_id, phone, instance):
     def _fetch():
