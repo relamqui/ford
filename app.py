@@ -1831,25 +1831,29 @@ def get_contacts():
                 for c in contacts:
                     contact_tags = c.tags or []
                     
-                    # Verifica se o contato tem tag filial:setor de OUTRA filial
+                    # Verifica se o contato tem tag filial:setor da minha filial e/ou de outra
                     has_other_filial_tag = False
+                    has_my_filial_tag = False
                     has_any_filial_tag = False
                     for t in contact_tags:
                         if ':' in t and not t.lower().startswith('atendente:'):
-                            # É uma tag no formato Filial:Setor
                             tag_filial = t.split(':')[0]
                             if tag_filial in all_filial_names:
                                 has_any_filial_tag = True
-                                if t not in allowed_tags and tag_filial != filial_name:
+                                if t in allowed_tags or tag_filial == filial_name:
+                                    has_my_filial_tag = True
+                                else:
                                     has_other_filial_tag = True
                         elif t in all_filial_names:
-                            # Tag apenas com nome de filial
                             has_any_filial_tag = True
-                            if t != filial_name:
+                            if t == filial_name:
+                                has_my_filial_tag = True
+                            else:
                                 has_other_filial_tag = True
                     
-                    # Se tem tag de outra filial, sempre excluir
-                    if has_other_filial_tag:
+                    # Excluir apenas se tem tag de outra filial e NENHUMA da minha
+                    # (transferências criam tags de múltiplas filiais intencionalmente)
+                    if has_other_filial_tag and not has_my_filial_tag:
                         continue
                     
                     # Verifica se alguma tag do contato bate com as tags permitidas
@@ -1990,6 +1994,20 @@ def create_contact():
     tags = list(contact.tags or [])
     if atendente_tag not in tags:
         tags.append(atendente_tag)
+    
+    # Adicionar tag Filial:Setor do atendente para roteamento correto
+    if user.filial and user.setor:
+        filial_setor_tag = f"{user.filial}:{user.setor}"
+        if filial_setor_tag not in tags:
+            tags.append(filial_setor_tag)
+    elif user.filial_id and user.setor_id:
+        _f = Filial.query.get(user.filial_id)
+        _s = Setor.query.get(user.setor_id)
+        if _f and _s:
+            filial_setor_tag = f"{_f.name}:{_s.name}"
+            if filial_setor_tag not in tags:
+                tags.append(filial_setor_tag)
+    
     contact.tags = tags
     flag_modified(contact, 'tags')
     
@@ -2508,14 +2526,14 @@ def chat_transfer():
         'tags': list(contact.tags or [])
     }, room='admin')
     
-    socketio.emit('chat_assigned', {
+    socketio.emit('chat_assignment', {
         'contact_id': contact.id,
         'assigned_to': None,
         'assigned_name': None,
         'tags': list(contact.tags or [])
     }, room=f"instance_{contact.instance or 'unknown'}")
     
-    socketio.emit('chat_assigned', {
+    socketio.emit('chat_assignment', {
         'contact_id': contact.id,
         'assigned_to': None,
         'assigned_name': None,

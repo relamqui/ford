@@ -89,14 +89,14 @@ async function loadContacts() {
         contacts = contacts.filter(c => {
           const tags = c.tags || [];
           
-          // Detectar tags no formato "Filial:Setor" que NÃO são da minha filial
-          for (const t of tags) {
-            if (typeof t === 'string' && t.includes(':') && !t.toLowerCase().startsWith('atendente:')) {
-              const tagFilial = t.split(':')[0];
-              // Se a tag tem uma filial diferente da minha, excluir este contato
-              if (myFilial && tagFilial !== myFilial) {
-                return false;
-              }
+          // Detectar tags no formato "Filial:Setor"
+          // Regra: manter o contato se PELO MENOS UMA tag Filial:Setor é da minha filial
+          // (transferências criam tags de múltiplas filiais intencionalmente)
+          const filialTags = tags.filter(t => typeof t === 'string' && t.includes(':') && !t.toLowerCase().startsWith('atendente:'));
+          if (filialTags.length > 0 && myFilial) {
+            const hasMyFilial = filialTags.some(t => t.split(':')[0] === myFilial);
+            if (!hasMyFilial) {
+              return false; // Nenhuma tag Filial:Setor é da minha filial
             }
           }
           
@@ -191,26 +191,25 @@ function initSocket(token) {
       if (contact) {
         contact.tags = data.tags;
         
-        // ── Filtro de segurança: remover contato se agora tem tag de outra filial ──
+        // ── Filtro de segurança: remover contato se NENHUMA tag Filial:Setor é da minha filial ──
         const userData = JSON.parse(localStorage.getItem('wp_crm_user') || '{}');
         if (userData.role !== 'admin' && userData.filial) {
           const newTags = data.tags || [];
-          for (const t of newTags) {
-            if (typeof t === 'string' && t.includes(':') && !t.toLowerCase().startsWith('atendente:')) {
-              const tagFilial = t.split(':')[0];
-              if (tagFilial !== userData.filial) {
-                // Contato foi roteado para outra filial — remover da lista
-                console.log('[Socket] Contato roteado para outra filial, removendo:', contact.id, t);
-                CONTACTS = CONTACTS.filter(c => c.id !== contact.id);
-                if (currentChat && currentChat.id === contact.id) {
-                  currentChat = null;
-                  document.getElementById('chatEmpty').style.display = 'flex';
-                  document.getElementById('chatInterface').style.display = 'none';
-                }
-                renderChatList(getFilteredContacts());
-                renderTagFilter();
-                return;
+          const filialTags = newTags.filter(t => typeof t === 'string' && t.includes(':') && !t.toLowerCase().startsWith('atendente:'));
+          if (filialTags.length > 0) {
+            const hasMyFilial = filialTags.some(t => t.split(':')[0] === userData.filial);
+            if (!hasMyFilial) {
+              // Nenhuma tag Filial:Setor é da minha filial — remover da lista
+              console.log('[Socket] Contato não pertence à minha filial, removendo:', contact.id, filialTags);
+              CONTACTS = CONTACTS.filter(c => c.id !== contact.id);
+              if (currentChat && currentChat.id === contact.id) {
+                currentChat = null;
+                document.getElementById('chatEmpty').style.display = 'flex';
+                document.getElementById('chatInterface').style.display = 'none';
               }
+              renderChatList(getFilteredContacts());
+              renderTagFilter();
+              return;
             }
           }
         }
