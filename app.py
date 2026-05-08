@@ -1529,7 +1529,20 @@ def wait_time_monitor_loop():
                         # Busca filial e setor: tenta pelo atendente primeiro, depois pelo ultimo_setor
                         filial_nome = None
                         setor_nome = reg.ultimo_setor  # fallback: setor de destino da transferência
-                        if reg.atendente:
+                        if contact_obj and contact_obj.assigned_to:
+                            atend_user = User.query.get(contact_obj.assigned_to)
+                            if atend_user:
+                                if atend_user.filial_id:
+                                    _f = Filial.query.get(atend_user.filial_id)
+                                    filial_nome = _f.name if _f else atend_user.filial
+                                if atend_user.setor_id:
+                                    _s = Setor.query.get(atend_user.setor_id)
+                                    setor_nome = _s.name if _s else atend_user.setor
+                                if not filial_nome:
+                                    filial_nome = atend_user.filial
+                                if not setor_nome:
+                                    setor_nome = atend_user.setor
+                        elif reg.atendente:
                             atend_user = User.query.filter_by(name=reg.atendente).first()
                             if atend_user:
                                 if atend_user.filial_id:
