@@ -1667,7 +1667,11 @@ function updateAttendanceBar(contact) {
   } else {
     // Outro atendente está atendendo — input travado
     info.innerHTML = `<span class="att-status-dot active"></span> <span>Atendido por <span class="att-label">${contact.assigned_name}</span></span>`;
-    actions.innerHTML = '';
+    if (user.role === 'admin') {
+      actions.innerHTML = `<button class="btn-destravar" onclick="releaseChat()">🔓 Destravar</button>`;
+    } else {
+      actions.innerHTML = '';
+    }
     if (inputBar) inputBar.style.display = 'none';
     if (inputLocked) {
       inputLocked.style.display = 'flex';

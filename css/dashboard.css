@@ -1248,7 +1248,7 @@ body {
   gap: 8px;
 }
 
-.btn-atender, .btn-finalizar {
+.btn-atender, .btn-finalizar, .btn-destravar {
   padding: 6px 16px;
   border: none;
   border-radius: 8px;
@@ -1280,6 +1280,16 @@ body {
 }
 .btn-finalizar:hover {
   background: rgba(243,39,53,0.2);
+  transform: translateY(-1px);
+}
+
+.btn-destravar {
+  background: rgba(255,152,0,0.12);
+  color: #ff9800;
+  border: 1px solid rgba(255,152,0,0.3);
+}
+.btn-destravar:hover {
+  background: rgba(255,152,0,0.2);
   transform: translateY(-1px);
 }
 
