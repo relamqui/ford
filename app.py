@@ -1411,11 +1411,13 @@ def send_location():
         headers = {'apikey': os.getenv('EVOLUTION_API_KEY'), 'Content-Type': 'application/json'}
         payload = {
             "number": number,
-            "locationMessage": {
-                "name": name,
-                "address": address,
-                "latitude": float(latitude),
-                "longitude": float(longitude)
+            "name": name,
+            "address": address,
+            "latitude": float(latitude),
+            "longitude": float(longitude),
+            "options": {
+                "delay": 1200,
+                "presence": "composing"
             }
         }
         res = requests.post(url, json=payload, headers=headers, timeout=60)
