@@ -1426,7 +1426,7 @@ def send_location():
 
         msg_id = res_data.get('key', {}).get('id') or res_data.get('messageId') or f"loc_out_{int(now.timestamp())}"
         
-        text = f"📍 Localização: {name}\nhttps://maps.google.com/?q={latitude},{longitude}"
+        text = f"[LOCATION_REF] {latitude}|{longitude}|{name}|{address}"
 
         contact_id = f"c_{number}_{inst}"
 
