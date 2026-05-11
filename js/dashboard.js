@@ -406,22 +406,30 @@ function setView(view) {
   }
 }
 
+// ─── Chat Badge ───────────────────────────────────────────────────────────────
+function updateChatBadge() {
+  const badge = document.getElementById('chatBadge');
+  if (!badge) return;
+  const visible = getFilteredContacts();
+  const totalUnread = visible.reduce((sum, c) => {
+    if (currentChat && c.id === currentChat.id) return sum;
+    return sum + (c.unread > 0 ? 1 : 0);
+  }, 0);
+  if (totalUnread > 0) {
+    badge.textContent = totalUnread;
+    badge.style.display = 'flex';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
 // ─── Chat List ────────────────────────────────────────────────────────────────
 function renderChatList(contacts) {
   const list = document.getElementById('chatList');
   list.innerHTML = '';
 
-  const badge = document.getElementById('chatBadge');
-  if (badge) {
-    // Calcula a quantidade total de chats (do usuário) que possuem mensagens não lidas
-    const totalUnreadChats = CONTACTS.reduce((sum, c) => sum + (c.unread > 0 ? 1 : 0), 0);
-    if (totalUnreadChats > 0) {
-      badge.textContent = totalUnreadChats;
-      badge.style.display = 'flex';
-    } else {
-      badge.style.display = 'none';
-    }
-  }
+  updateChatBadge();
+
 
   if (!contacts.length) {
     list.innerHTML = `<div style="padding:32px;text-align:center;color:var(--text-muted);font-size:13px;">Nenhuma conversa encontrada</div>`;
@@ -508,6 +516,7 @@ async function openChat(id) {
   
   currentChat = contact;
   contact.unread = 0;
+  updateChatBadge();
   
   // Limpa o alerta de mensagens não lidas no backend
   const token = localStorage.getItem('wp_crm_token');
