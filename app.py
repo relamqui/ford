@@ -1388,6 +1388,83 @@ def send_document():
         print(f"Erro send_document: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/whatsapp/send-location', methods=['POST'])
+@auth_required
+def send_location():
+    data = request.json
+    inst = data.get('instance')
+    number = "".join(filter(str.isdigit, str(data.get('number', ''))))
+    number = normalize_br_phone(number)
+    name = data.get('name', 'Localização')
+    address = data.get('address', '')
+    latitude = data.get('latitude')
+    longitude = data.get('longitude')
+
+    if not inst or not number or latitude is None or longitude is None:
+        return jsonify({'error': 'instance, number, latitude e longitude são obrigatórios'}), 400
+
+    try:
+        now = get_now()
+        time_str = now.strftime("%d/%m %H:%M")
+
+        url = f"{os.getenv('EVOLUTION_API_URL')}/message/sendLocation/{inst}"
+        headers = {'apikey': os.getenv('EVOLUTION_API_KEY'), 'Content-Type': 'application/json'}
+        payload = {
+            "number": number,
+            "locationMessage": {
+                "name": name,
+                "address": address,
+                "latitude": float(latitude),
+                "longitude": float(longitude)
+            }
+        }
+        res = requests.post(url, json=payload, headers=headers, timeout=60)
+        res.raise_for_status()
+        res_data = res.json()
+
+        msg_id = res_data.get('key', {}).get('id') or res_data.get('messageId') or f"loc_out_{int(now.timestamp())}"
+        
+        text = f"📍 Localização: {name}\nhttps://maps.google.com/?q={latitude},{longitude}"
+
+        contact_id = f"c_{number}_{inst}"
+
+        contact = Contact.query.filter_by(id=contact_id).first()
+        if not contact:
+            contact = Contact(id=contact_id, phone=number, name=f"Novo {number}", instance=inst)
+            db_sql.session.add(contact)
+            db_sql.session.flush()
+
+        if not Message.query.get(msg_id):
+            new_msg = Message(
+                id=msg_id, contact_id=contact_id, text=text,
+                type='out', time=time_str, timestamp=int(now.timestamp()), instance=inst
+            )
+            db_sql.session.add(new_msg)
+
+        contact.last_msg = '📍 Localização'
+        contact.last_msg_time = time_str
+        db_sql.session.commit()
+
+        # Emitir o evento via socket para atualizar o chat aberto do remetente
+        socketio.emit('whatsapp_event', {
+            'contact_id': contact_id,
+            'message': {
+                'id': msg_id,
+                'text': text,
+                'type': 'out',
+                'time': time_str,
+                'timestamp': int(now.timestamp())
+            },
+            'last_msg': contact.last_msg,
+            'last_msg_time': contact.last_msg_time,
+            'unread': contact.unread
+        }, room=f"instance_{inst}")
+
+        return jsonify({'ok': True, 'msg_id': msg_id, 'key': res_data.get('key', {})})
+    except Exception as e:
+        print(f"Erro send_location: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/bot-message', methods=['POST'])
 def bot_message_webhook():
     try:

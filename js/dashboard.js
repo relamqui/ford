@@ -1403,6 +1403,62 @@ function insertEmoji(emoji) {
   toggleEmojiPanel();
 }
 
+// ─── Localização ──────────────────────────────────────────────────────────────
+async function sendLocationMessage() {
+  if (!currentChat) return;
+  
+  if (!navigator.geolocation) {
+    showToast('Geolocalização não é suportada pelo seu navegador.');
+    return;
+  }
+  
+  showToast('Obtendo sua localização (autorize no navegador)...');
+  
+  navigator.geolocation.getCurrentPosition(
+    async (position) => {
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+      const user = JSON.parse(localStorage.getItem('wp_crm_user') || '{}');
+      const nomeAtendente = user.name || 'Atendente';
+      
+      try {
+        const res = await fetch(`${API_URL}/api/whatsapp/send-location`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('wp_crm_token')}`
+          },
+          body: JSON.stringify({
+            instance: currentChat.instance,
+            number: currentChat.phone,
+            name: `Localização de ${nomeAtendente}`,
+            address: 'Enviado via CRM',
+            latitude: lat,
+            longitude: lng
+          })
+        });
+        
+        if (res.ok) {
+          showToast('Localização enviada!');
+        } else {
+          showToast('Erro ao enviar localização.');
+        }
+      } catch (e) {
+        console.error(e);
+        showToast('Erro de conexão ao enviar localização.');
+      }
+    },
+    (error) => {
+      console.error(error);
+      let msg = 'Erro ao obter localização.';
+      if (error.code === 1) msg = 'Permissão de localização negada.';
+      else if (error.code === 2) msg = 'Posição não disponível no momento.';
+      showToast(msg);
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+  );
+}
+
 // ─── File Upload ──────────────────────────────────────────────────────────────
 function triggerFileUpload() {
   document.getElementById('fileUpload').click();
