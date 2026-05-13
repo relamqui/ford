@@ -760,9 +760,7 @@ function renderMessages(messages) {
         const parts = ref.split('|');
         const contactName = parts[0] || 'Contato';
         const contactPhone = parts[1] || '';
-        const waLink = contactPhone
-            ? `https://wa.me/${contactPhone.replace(/[^\d]/g, '')}`
-            : null;
+        const cleanNumber = contactPhone ? contactPhone.replace(/[^\d]/g, '') : null;
         messageContent = `
             <div style="display:flex; align-items:center; gap:12px; padding:12px 14px; background:rgba(255,255,255,0.07); border-radius:12px; border:1px solid rgba(255,255,255,0.12); min-width:200px; max-width:280px;">
                 <div style="width:44px; height:44px; border-radius:50%; background:linear-gradient(135deg,#25D366,#128C7E); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
@@ -772,12 +770,12 @@ function renderMessages(messages) {
                     <div style="font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(contactName)}</div>
                     ${contactPhone ? `<div style="font-size:12px; opacity:0.7; margin-top:2px;">${escapeHtml(contactPhone)}</div>` : ''}
                 </div>
-                ${waLink ? `
-                <a href="${waLink}" target="_blank" title="Abrir no WhatsApp"
-                   style="display:flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:50%; background:rgba(37,211,102,0.2); color:#25D366; text-decoration:none; flex-shrink:0; transition:background 0.2s;"
+                ${cleanNumber ? `
+                <button onclick="showNewChatWithNumber('${cleanNumber}')" title="Iniciar Nova Conversa no Sistema"
+                   style="display:flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:50%; border:none; background:rgba(37,211,102,0.2); color:#25D366; cursor:pointer; flex-shrink:0; transition:background 0.2s;"
                    onmouseover="this.style.background='rgba(37,211,102,0.4)'" onmouseout="this.style.background='rgba(37,211,102,0.2)'">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M20.52 3.48A11.94 11.94 0 0 0 12 0C5.37 0 0 5.37 0 12c0 2.11.55 4.16 1.59 5.97L0 24l6.22-1.55A11.96 11.96 0 0 0 12 24c6.63 0 12-5.37 12-12 0-3.2-1.25-6.21-3.48-8.52zM12 22c-1.85 0-3.66-.5-5.24-1.44l-.37-.22-3.89.97 1.03-3.73-.24-.39A9.93 9.93 0 0 1 2 12C2 6.49 6.49 2 12 2c2.67 0 5.18 1.04 7.07 2.93A9.94 9.94 0 0 1 22 12c0 5.51-4.49 10-10 10zm5.47-7.38c-.3-.15-1.77-.87-2.04-.97-.28-.1-.48-.15-.68.15-.2.3-.77.97-.95 1.17-.17.2-.35.22-.65.07-.3-.15-1.27-.47-2.42-1.49-.89-.79-1.5-1.77-1.67-2.07-.18-.3-.02-.46.13-.61.13-.13.3-.35.45-.52.15-.18.2-.3.3-.5.1-.2.05-.37-.02-.52-.07-.15-.68-1.63-.93-2.24-.24-.58-.49-.5-.68-.51-.17-.01-.37-.01-.57-.01-.2 0-.52.07-.79.37-.27.3-1.04 1.01-1.04 2.47s1.07 2.87 1.22 3.07c.15.2 2.1 3.2 5.08 4.49.71.31 1.26.49 1.69.63.71.23 1.36.2 1.87.12.57-.09 1.77-.72 2.02-1.42.25-.7.25-1.3.17-1.42-.07-.12-.28-.2-.58-.35z"/></svg>
-                </a>` : ''}
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path><line x1="12" y1="9" x2="12" y2="15"></line><line x1="9" y1="12" x2="15" y2="12"></line></svg>
+                </button>` : ''}
             </div>`;
     } else {
         messageContent = escapeHtml(messageContent).replace(/\n/g, '<br>');
@@ -2401,6 +2399,11 @@ async function confirmSendContact() {
   const targetInstance = currentChat.instanceName || currentChat.instance;
   const cleanNumber = currentChat.phone.replace(/\D/g, '');
 
+  let formattedContactPhone = contactPhone.replace(/\D/g, '');
+  if (formattedContactPhone.length === 10 || formattedContactPhone.length === 11) {
+    formattedContactPhone = '55' + formattedContactPhone;
+  }
+
   try {
     const btn = document.querySelector('#sendContactModal .btn-save-notes');
     const oldText = btn.innerHTML;
@@ -2417,7 +2420,7 @@ async function confirmSendContact() {
         instance: targetInstance,
         number: cleanNumber,
         contact_name: contactName,
-        contact_phone: contactPhone
+        contact_phone: formattedContactPhone
       })
     });
 
@@ -2558,3 +2561,17 @@ if (originalOpenChatQR) {
 
 // Chama inicialmente caso a página já tenha carregado
 setTimeout(renderQuickReplies, 1000);
+
+// Helper para abrir modal de nova conversa com número pré-preenchido
+window.showNewChatWithNumber = async function(number) {
+    let cleanNumber = String(number).replace(/\D/g, '');
+    if (cleanNumber.length === 10 || cleanNumber.length === 11) {
+        cleanNumber = '55' + cleanNumber;
+    }
+    
+    await showNewChat();
+    const phoneInput = document.getElementById('newChatPhone');
+    if (phoneInput) {
+        phoneInput.value = cleanNumber;
+    }
+};
