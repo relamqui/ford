@@ -1464,6 +1464,97 @@ def send_location():
         print(f"Erro send_location: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/whatsapp/send-contact', methods=['POST'])
+@auth_required
+def send_contact():
+    """Envia um cartão de contato (vCard) para o cliente via Evolution API."""
+    data = request.json
+    inst = data.get('instance')
+    number = "".join(filter(str.isdigit, str(data.get('number', ''))))
+    number = normalize_br_phone(number)
+    contact_name = data.get('contact_name', 'Contato').strip()
+    contact_phone = "".join(filter(str.isdigit, str(data.get('contact_phone', ''))))
+    contact_phone = normalize_br_phone(contact_phone)
+
+    if not inst or not number or not contact_phone:
+        return jsonify({'error': 'instance, number e contact_phone são obrigatórios'}), 400
+
+    # --- Instance permission check ---
+    if request.user.get('role') != 'admin':
+        user_obj_check = User.query.get(request.user['id'])
+        allowed = user_obj_check.instances or []
+        if inst not in allowed:
+            return jsonify({'error': 'Você não tem permissão para enviar mensagens nesta instância.'}), 403
+
+    try:
+        now = get_now()
+        time_str = now.strftime("%d/%m %H:%M")
+
+        # Montar vCard padrão
+        vcard = (
+            "BEGIN:VCARD\r\n"
+            "VERSION:3.0\r\n"
+            f"FN:{contact_name}\r\n"
+            f"TEL;type=CELL;type=VOICE;waid={contact_phone}:+{contact_phone}\r\n"
+            "END:VCARD"
+        )
+
+        url = f"{os.getenv('EVOLUTION_API_URL')}/message/sendContact/{inst}"
+        headers = {'apikey': os.getenv('EVOLUTION_API_KEY'), 'Content-Type': 'application/json'}
+        payload = {
+            "number": number,
+            "contact": [
+                {
+                    "fullName": contact_name,
+                    "wuid": contact_phone,
+                    "phoneNumber": f"+{contact_phone}"
+                }
+            ]
+        }
+        print(f"[Send Contact] Enviando contato '{contact_name}' ({contact_phone}) para {number} via {inst}")
+        res = requests.post(url, json=payload, headers=headers, timeout=30)
+        res_data = res.json()
+        print(f"[Send Contact] Resposta: status={res.status_code} body={json.dumps(res_data)[:300]}")
+
+        msg_id = res_data.get('key', {}).get('id') or res_data.get('messageId') or f"contact_out_{int(now.timestamp())}"
+        text = f"[CONTACT_REF] {contact_name}|+{contact_phone}|{vcard}"
+
+        contact_id = f"c_{number}_{inst}"
+        contact = Contact.query.filter_by(id=contact_id).first()
+        if not contact:
+            contact = Contact(id=contact_id, phone=number, name=f"Novo {number}", instance=inst)
+            db_sql.session.add(contact)
+            db_sql.session.flush()
+
+        if not Message.query.get(msg_id):
+            new_msg = Message(
+                id=msg_id, contact_id=contact_id, text=text,
+                type='out', time=time_str, timestamp=int(now.timestamp()), instance=inst
+            )
+            db_sql.session.add(new_msg)
+
+        contact.last_msg = f'👤 {contact_name}'
+        contact.last_msg_time = time_str
+        db_sql.session.commit()
+
+        # Emitir socket para o frontend renderizar imediatamente
+        fake_event = {
+            'event': 'send.message',
+            'instance': inst,
+            'data': {
+                'key': {'remoteJid': f"{number}@s.whatsapp.net", 'fromMe': True, 'id': msg_id},
+                'message': {'contactMessage': {'displayName': contact_name, 'vcard': vcard}}
+            },
+            '_processed_text': text
+        }
+        socketio.emit('whatsapp_event', fake_event, room=f'instance_{inst}')
+        socketio.emit('whatsapp_event', fake_event, room='admin')
+
+        return jsonify({'ok': True, 'msg_id': msg_id, 'key': res_data.get('key', {})})
+    except Exception as e:
+        print(f"Erro send_contact: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/bot-message', methods=['POST'])
 def bot_message_webhook():
     try:
@@ -1775,6 +1866,23 @@ def webhook():
                 address = m.get('locationMessage', {}).get('address', '')
                 text = f"[LOCATION_REF] {lat}|{lng}|{name}|{address}"
                 print(f"[Location] Guardando ref de localizacao: instance={instance} msg_id={msg_id_key}")
+            elif 'contactMessage' in m:
+                contact_data = m.get('contactMessage', {})
+                display_name = contact_data.get('displayName', 'Contato')
+                vcard = contact_data.get('vcard', '')
+                # Extrai telefone do vCard (linha TEL:)
+                contact_phone = ''
+                for line in vcard.split('\n'):
+                    if line.strip().upper().startswith('TEL'):
+                        contact_phone = line.split(':')[-1].strip().replace('\r', '')
+                        break
+                text = f"[CONTACT_REF] {display_name}|{contact_phone}|{vcard}"
+                print(f"[Contact] Guardando ref de contato: name={display_name} phone={contact_phone}")
+            elif 'contactsArrayMessage' in m:
+                contacts_list = m.get('contactsArrayMessage', {}).get('contacts', [])
+                names = ', '.join([c.get('displayName', '?') for c in contacts_list])
+                text = f"[CONTACT_REF] {names}||" + str(contacts_list)
+                print(f"[Contact] Guardando array de contatos: {names}")
             else:
                 text = m.get('conversation') or \
                        m.get('extendedTextMessage', {}).get('text') or \

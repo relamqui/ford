@@ -347,6 +347,26 @@ function handleIncomingWebhook(data) {
             const docName = msg.message.documentMessage.fileName || 'Arquivo';
             text = `[DOC_REF] ${inst}|${msgId}|${docName}`;
         }
+
+        if (msg.message?.contactMessage) {
+            const cd = msg.message.contactMessage;
+            const displayName = cd.displayName || 'Contato';
+            const vcard = cd.vcard || '';
+            let contactPhone = '';
+            for (const line of vcard.split('\n')) {
+                if (line.trim().toUpperCase().startsWith('TEL')) {
+                    contactPhone = line.split(':').pop().trim().replace(/\r/g, '');
+                    break;
+                }
+            }
+            text = `[CONTACT_REF] ${displayName}|${contactPhone}|${vcard}`;
+        }
+
+        if (msg.message?.contactsArrayMessage) {
+            const contacts = msg.message.contactsArrayMessage.contacts || [];
+            const names = contacts.map(c => c.displayName || '?').join(', ');
+            text = `[CONTACT_REF] ${names}||`;
+        }
     }
     
     const now = new Date();
@@ -483,6 +503,9 @@ function renderChatList(contacts) {
       preview = '📎 Arquivo';
     } else if (preview.startsWith('[LOCATION_REF]')) {
       preview = '📍 Localização';
+    } else if (preview.startsWith('[CONTACT_REF]')) {
+      const parts = preview.replace('[CONTACT_REF] ', '').split('|');
+      preview = `👤 ${parts[0] || 'Contato'}`;
     }
 
     // Tags para mostrar na listagem
@@ -732,6 +755,30 @@ function renderMessages(messages) {
             const isOut = msg.type === 'out';
             messageContent = buildWaAudioHTML(rawSrc, avatarLetter, isOut);
         }
+    } else if (messageContent.startsWith('[CONTACT_REF] ')) {
+        const ref = messageContent.replace('[CONTACT_REF] ', '');
+        const parts = ref.split('|');
+        const contactName = parts[0] || 'Contato';
+        const contactPhone = parts[1] || '';
+        const waLink = contactPhone
+            ? `https://wa.me/${contactPhone.replace(/[^\d]/g, '')}`
+            : null;
+        messageContent = `
+            <div style="display:flex; align-items:center; gap:12px; padding:12px 14px; background:rgba(255,255,255,0.07); border-radius:12px; border:1px solid rgba(255,255,255,0.12); min-width:200px; max-width:280px;">
+                <div style="width:44px; height:44px; border-radius:50%; background:linear-gradient(135deg,#25D366,#128C7E); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>
+                </div>
+                <div style="flex:1; min-width:0;">
+                    <div style="font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(contactName)}</div>
+                    ${contactPhone ? `<div style="font-size:12px; opacity:0.7; margin-top:2px;">${escapeHtml(contactPhone)}</div>` : ''}
+                </div>
+                ${waLink ? `
+                <a href="${waLink}" target="_blank" title="Abrir no WhatsApp"
+                   style="display:flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:50%; background:rgba(37,211,102,0.2); color:#25D366; text-decoration:none; flex-shrink:0; transition:background 0.2s;"
+                   onmouseover="this.style.background='rgba(37,211,102,0.4)'" onmouseout="this.style.background='rgba(37,211,102,0.2)'">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M20.52 3.48A11.94 11.94 0 0 0 12 0C5.37 0 0 5.37 0 12c0 2.11.55 4.16 1.59 5.97L0 24l6.22-1.55A11.96 11.96 0 0 0 12 24c6.63 0 12-5.37 12-12 0-3.2-1.25-6.21-3.48-8.52zM12 22c-1.85 0-3.66-.5-5.24-1.44l-.37-.22-3.89.97 1.03-3.73-.24-.39A9.93 9.93 0 0 1 2 12C2 6.49 6.49 2 12 2c2.67 0 5.18 1.04 7.07 2.93A9.94 9.94 0 0 1 22 12c0 5.51-4.49 10-10 10zm5.47-7.38c-.3-.15-1.77-.87-2.04-.97-.28-.1-.48-.15-.68.15-.2.3-.77.97-.95 1.17-.17.2-.35.22-.65.07-.3-.15-1.27-.47-2.42-1.49-.89-.79-1.5-1.77-1.67-2.07-.18-.3-.02-.46.13-.61.13-.13.3-.35.45-.52.15-.18.2-.3.3-.5.1-.2.05-.37-.02-.52-.07-.15-.68-1.63-.93-2.24-.24-.58-.49-.5-.68-.51-.17-.01-.37-.01-.57-.01-.2 0-.52.07-.79.37-.27.3-1.04 1.01-1.04 2.47s1.07 2.87 1.22 3.07c.15.2 2.1 3.2 5.08 4.49.71.31 1.26.49 1.69.63.71.23 1.36.2 1.87.12.57-.09 1.77-.72 2.02-1.42.25-.7.25-1.3.17-1.42-.07-.12-.28-.2-.58-.35z"/></svg>
+                </a>` : ''}
+            </div>`;
     } else {
         messageContent = escapeHtml(messageContent).replace(/\n/g, '<br>');
     }
@@ -2263,5 +2310,130 @@ async function confirmTransferChat() {
   } catch(e) {
     console.error(e);
     showToast('Erro de conexão ao transferir');
+  }
+}
+
+// ─── Envio de Localização ─────────────────────────────────────────────────────
+async function sendLocationMessage() {
+  if (!currentChat) return;
+
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+      const targetInstance = currentChat.instanceName || currentChat.instance;
+      const cleanNumber = currentChat.phone.replace(/\D/g, '');
+
+      try {
+        const response = await fetch(`${API_URL}/api/whatsapp/send-location`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('wp_crm_token')}`
+          },
+          body: JSON.stringify({
+            instance: targetInstance,
+            number: cleanNumber,
+            latitude: lat,
+            longitude: lng,
+            name: "Minha Localização",
+            address: "Enviado pelo sistema"
+          })
+        });
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Falha ao enviar localização');
+
+        showToast('Localização enviada!');
+      } catch (err) {
+        console.error('Erro ao enviar localização:', err);
+        showToast(`Erro ao enviar localização: ${err.message}`);
+      }
+    }, (error) => {
+      console.error("Erro ao obter localização", error);
+      showToast("Não foi possível obter a sua localização. Verifique as permissões do navegador.");
+    });
+  } else {
+    showToast("Geolocalização não é suportada por este navegador.");
+  }
+}
+
+// ─── Envio de Contato ─────────────────────────────────────────────────────────
+function openSendContactModal() {
+  if (!currentChat) {
+    showToast("Selecione uma conversa primeiro.");
+    return;
+  }
+  document.getElementById('sendContactModal').style.display = 'flex';
+  document.getElementById('contactSendName').value = '';
+  document.getElementById('contactSendPhone').value = '';
+  document.getElementById('contactSendName').focus();
+}
+
+function closeSendContactModal() {
+  document.getElementById('sendContactModal').style.display = 'none';
+}
+
+function maskPhoneInput(input) {
+  let value = input.value.replace(/\D/g, '');
+  if (value.length > 11) value = value.slice(0, 11);
+  
+  if (value.length > 2) {
+    value = `(${value.slice(0,2)}) ${value.slice(2)}`;
+  }
+  if (value.length > 9) {
+    value = `${value.slice(0,9)}-${value.slice(9)}`;
+  }
+  input.value = value;
+}
+
+async function confirmSendContact() {
+  if (!currentChat) return;
+
+  const contactName = document.getElementById('contactSendName').value.trim();
+  const contactPhone = document.getElementById('contactSendPhone').value.trim();
+
+  if (!contactName || !contactPhone) {
+    showToast("Preencha o nome e o número de telefone.");
+    return;
+  }
+
+  const targetInstance = currentChat.instanceName || currentChat.instance;
+  const cleanNumber = currentChat.phone.replace(/\D/g, '');
+
+  try {
+    const btn = document.querySelector('#sendContactModal .btn-save-notes');
+    const oldText = btn.innerHTML;
+    btn.innerHTML = 'Enviando...';
+    btn.disabled = true;
+
+    const response = await fetch(`${API_URL}/api/whatsapp/send-contact`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('wp_crm_token')}`
+      },
+      body: JSON.stringify({
+        instance: targetInstance,
+        number: cleanNumber,
+        contact_name: contactName,
+        contact_phone: contactPhone
+      })
+    });
+
+    const data = await response.json();
+    btn.innerHTML = oldText;
+    btn.disabled = false;
+
+    if (!response.ok) throw new Error(data.error || 'Falha ao enviar contato');
+
+    showToast('Contato enviado!');
+    closeSendContactModal();
+  } catch (err) {
+    console.error('Erro ao enviar contato:', err);
+    showToast(`Erro ao enviar contato: ${err.message}`);
+    const btn = document.querySelector('#sendContactModal .btn-save-notes');
+    btn.innerHTML = '📤 Enviar Contato';
+    btn.disabled = false;
   }
 }

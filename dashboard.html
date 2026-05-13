@@ -191,6 +191,9 @@
         <button class="icon-btn" title="Enviar Localização" onclick="sendLocationMessage()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
         </button>
+        <button class="icon-btn" id="btnSendContact" title="Enviar Contato" onclick="openSendContactModal()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.87"/></svg>
+        </button>
         <input type="file" id="fileUpload" style="display:none" onchange="handleFileUpload(event)" />
         <div class="message-input-wrap">
           <textarea id="messageInput" placeholder="Digite uma mensagem" rows="1" oninput="autoResize(this); updateSendBtn()" onkeydown="handleEnter(event)"></textarea>
@@ -330,6 +333,33 @@
         </select>
       </div>
       <button class="btn-save-notes" style="width:100%;" onclick="confirmTransferChat()">Confirmar Transferência</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Enviar Contato -->
+<div class="modal-overlay" id="sendContactModal" style="display:none" onclick="closeSendContactModal()">
+  <div class="modal-box" onclick="event.stopPropagation()" style="width:380px">
+    <div class="modal-header">
+      <h3>Enviar Contato</h3>
+      <button class="icon-btn" onclick="closeSendContactModal()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div style="padding: 20px;">
+      <div style="margin-bottom:15px;">
+        <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-muted)">Nome do contato</label>
+        <input type="text" id="contactSendName" placeholder="Ex: João Silva"
+          style="width:100%;padding:10px;background:#2a3942;border:1px solid #3b4a54;border-radius:8px;color:white;outline:none;box-sizing:border-box">
+      </div>
+      <div style="margin-bottom:20px;">
+        <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-muted)">Número de telefone</label>
+        <input type="text" id="contactSendPhone" placeholder="Ex: (35) 99999-9999"
+          style="width:100%;padding:10px;background:#2a3942;border:1px solid #3b4a54;border-radius:8px;color:white;outline:none;box-sizing:border-box"
+          oninput="maskPhoneInput(this)">
+        <span style="font-size:11px;color:var(--text-muted);margin-top:4px;display:block">O número será normalizado automaticamente (DDD + número)</span>
+      </div>
+      <button class="btn-save-notes" style="width:100%;" onclick="confirmSendContact()">📤 Enviar Contato</button>
     </div>
   </div>
 </div>
