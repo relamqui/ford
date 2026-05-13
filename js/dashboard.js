@@ -2437,3 +2437,124 @@ async function confirmSendContact() {
     btn.disabled = false;
   }
 }
+
+// ─── Mensagens Rápidas (Quick Replies) ───────────────────────────────────────
+const QUICK_REPLIES_KEY = 'wp_crm_quick_replies';
+
+function getQuickReplies() {
+  try {
+    return JSON.parse(localStorage.getItem(QUICK_REPLIES_KEY) || '[]');
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveQuickReplies(replies) {
+  localStorage.setItem(QUICK_REPLIES_KEY, JSON.stringify(replies));
+}
+
+function renderQuickReplies() {
+  const container = document.getElementById('quickRepliesBar');
+  if (!container) return;
+
+  const replies = getQuickReplies();
+  container.innerHTML = '';
+  
+  if (replies.length > 0) {
+    container.style.display = 'flex';
+  } else {
+    container.style.display = 'none';
+  }
+
+  // Renderiza cada mensagem rápida salva
+  replies.forEach((reply, index) => {
+    const chip = document.createElement('div');
+    chip.className = 'quick-reply-chip';
+    chip.title = reply;
+    
+    const textSpan = document.createElement('span');
+    // Trunca para nÃ£o ficar gigante
+    textSpan.textContent = reply.length > 30 ? reply.substring(0, 30) + '...' : reply;
+    textSpan.onclick = () => insertQuickReply(reply);
+    
+    const delBtn = document.createElement('button');
+    delBtn.className = 'del-btn';
+    delBtn.innerHTML = '&times;';
+    delBtn.title = 'Remover mensagem rápida';
+    delBtn.onclick = (e) => {
+      e.stopPropagation();
+      deleteQuickReply(index);
+    };
+
+    chip.appendChild(textSpan);
+    chip.appendChild(delBtn);
+    container.appendChild(chip);
+  });
+
+  // Botão de adicionar
+  const addBtn = document.createElement('div');
+  addBtn.className = 'quick-reply-chip add-btn';
+  addBtn.innerHTML = '+ Nova Frase';
+  addBtn.title = 'Adicionar frase rápida padrão';
+  addBtn.onclick = addNewQuickReply;
+  container.appendChild(addBtn);
+  
+  // Mostrar se estamos dentro do chatArea visível e há botão adicionar
+  if (currentChat) {
+     container.style.display = 'flex';
+  }
+}
+
+function addNewQuickReply() {
+  const phrase = prompt("Digite a frase padrão que deseja salvar:");
+  if (phrase && phrase.trim()) {
+    const replies = getQuickReplies();
+    replies.push(phrase.trim());
+    saveQuickReplies(replies);
+    renderQuickReplies();
+  }
+}
+
+function deleteQuickReply(index) {
+  if (confirm("Remover esta frase rápida?")) {
+    const replies = getQuickReplies();
+    replies.splice(index, 1);
+    saveQuickReplies(replies);
+    renderQuickReplies();
+  }
+}
+
+function insertQuickReply(text) {
+  const input = document.getElementById('messageInput');
+  if (input) {
+    // Insere o texto onde o cursor está ou no final
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    const val = input.value;
+    input.value = val.slice(0, start) + text + val.slice(end);
+    
+    // Atualiza o cursor e dispara eventos
+    const newPos = start + text.length;
+    input.selectionStart = newPos;
+    input.selectionEnd = newPos;
+    input.focus();
+    
+    autoResize(input);
+    updateSendBtn();
+  }
+}
+
+// Intercepta a seleção de chat para mostrar a barra
+const originalSelectChatQR = window.selectChat;
+if (originalSelectChatQR) {
+  window.selectChat = async function(phone, instance) {
+    await originalSelectChatQR(phone, instance);
+    renderQuickReplies();
+  };
+} else {
+  // Caso nÃ£o intercepte por algum motivo, inicializa ao carregar
+  document.addEventListener('DOMContentLoaded', renderQuickReplies);
+}
+
+// Chama inicialmente caso a página já tenha carregado
+setTimeout(renderQuickReplies, 1000);
