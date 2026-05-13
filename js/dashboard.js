@@ -2511,7 +2511,7 @@ function addNewQuickReply() {
     const replies = getQuickReplies();
     replies.push(phrase.trim());
     saveQuickReplies(replies);
-    renderQuickReplies();
+    setTimeout(renderQuickReplies, 50); return res;
   }
 }
 
@@ -2520,7 +2520,7 @@ function deleteQuickReply(index) {
     const replies = getQuickReplies();
     replies.splice(index, 1);
     saveQuickReplies(replies);
-    renderQuickReplies();
+    setTimeout(renderQuickReplies, 50); return res;
   }
 }
 
@@ -2545,11 +2545,11 @@ function insertQuickReply(text) {
 }
 
 // Intercepta a seleção de chat para mostrar a barra
-const originalSelectChatQR = window.selectChat;
-if (originalSelectChatQR) {
-  window.selectChat = async function(phone, instance) {
-    await originalSelectChatQR(phone, instance);
-    renderQuickReplies();
+const originalOpenChatQR = window.openChat;
+if (originalOpenChatQR) {
+  window.openChat = async function(contactId) {
+    const res = await originalOpenChatQR(contactId);
+    setTimeout(renderQuickReplies, 50); return res;
   };
 } else {
   // Caso nÃ£o intercepte por algum motivo, inicializa ao carregar
