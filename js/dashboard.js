@@ -813,7 +813,7 @@ function renderMessages(messages) {
                 </button>` : ''}
             </div>`;
     } else {
-        messageContent = escapeHtml(messageContent).replace(/\n/g, '<br>');
+        messageContent = escapeHtml(messageContent).replace(/\n/g, '<br>').replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>');
     }
 
     el.innerHTML = `
@@ -966,7 +966,7 @@ async function sendMessage() {
 
   // 1. Atualiza Localmente (Optimistic Update) — exibe texto original sem prefixo
   const tempId = 'temp_' + Date.now();
-  const newMsg = { id: tempId, text, type: 'out', time };
+  const newMsg = { id: tempId, text: textToSend, type: 'out', time };
   if (!currentChat.messages) currentChat.messages = [];
   currentChat.messages.push(newMsg);
   currentChat.lastMsg = text;
