@@ -1214,6 +1214,17 @@ def send_audio():
         print(f"[Send Audio] Resposta: status={res.status_code} body={json.dumps(res_data)[:300]}")
 
         msg_id = extract_waha_msg_id(res_data, f"audio_out_{int(now.timestamp())}")
+        
+        # Salvar o arquivo localmente para poder reproduzir dps (já que o WAHA não armazena arquivos enviados)
+        try:
+            import base64
+            media_dir = os.path.join(DATA_DIR, 'media')
+            os.makedirs(media_dir, exist_ok=True)
+            with open(os.path.join(media_dir, msg_id), 'wb') as f:
+                f.write(base64.b64decode(audio_raw))
+        except Exception as e:
+            print(f"[Send Audio] Erro ao salvar arquivo local: {e}")
+
         text = f"[AUDIO_REF] {inst}|{msg_id}"
 
         contact_id = f"c_{number}_{inst}"
@@ -3020,9 +3031,31 @@ def stream_media(media_type):
     if not instance or not msg_id:
         return jsonify({'error': 'instance e msg_id sao obrigatorios'}), 400
     try:
-        waha_url = f"{WAHA_API_URL}/api/files?session={instance}&messageId={msg_id}"
-        print(f"[{media_type.capitalize()} Proxy] Buscando {media_type}: instance={instance} msg_id={msg_id}")
+        # Default mimetypes based on requested media_type
+        content_type = 'application/octet-stream'
+        if media_type == 'audio': content_type = 'audio/ogg'
+        elif media_type == 'image': content_type = 'image/jpeg'
+        elif media_type == 'video': content_type = 'video/mp4'
+
+        # Verificar se o arquivo existe localmente
+        media_dir = os.path.join(DATA_DIR, 'media')
+        local_path = os.path.join(media_dir, msg_id)
+        if os.path.exists(local_path):
+            print(f"[{media_type.capitalize()} Proxy] Servindo do cache local: {msg_id}")
+            return send_file(local_path, mimetype=content_type)
+
+        # Tentar usar apenas o ID curto (final) porque o NOWEB usa o ID curto no /api/files
+        short_id = msg_id.split('_')[-1]
+        
+        waha_url = f"{WAHA_API_URL}/api/files?session={instance}&messageId={short_id}"
+        print(f"[{media_type.capitalize()} Proxy] Buscando {media_type}: instance={instance} msg_id={short_id}")
         res = requests.get(waha_url, headers=get_waha_headers(), timeout=15)
+        
+        # Fallback para o ID longo caso a engine espere o longo
+        if res.status_code == 404:
+            print(f"[{media_type.capitalize()} Proxy] Arquivo não encontrado pelo ID curto. Tentando ID longo...")
+            waha_url_long = f"{WAHA_API_URL}/api/files?session={instance}&messageId={msg_id}"
+            res = requests.get(waha_url_long, headers=get_waha_headers(), timeout=15)
         print(f"[{media_type.capitalize()} Proxy] status={res.status_code} resp_len={len(res.content)}")
         if res.status_code in (200, 201):
             # WAHA retorna o arquivo binário diretamente
