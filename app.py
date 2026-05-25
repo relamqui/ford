@@ -311,7 +311,7 @@ migrate_to_sql()
 
 @app.before_request
 def log_request_info():
-    if not request.path.startswith('/static'):
+    if not request.path.startswith('/static') and request.path != '/api/whatsapp/instances':
         print(f"Solicitação: {request.method} {request.path}")
 
 def auth_required(f):
@@ -1051,9 +1051,17 @@ def send_message():
         
         # Chamada para a API externa (WAHA)
         url = f"{WAHA_API_URL}/api/sendText"
-        payload = {"session": inst, "chatId": f"{number}@c.us", "text": text}
+        payload = {
+            "chatId": f"{number}@c.us",
+            "id": None,
+            "reply_to": None,
+            "text": text,
+            "linkPreview": True,
+            "linkPreviewHighQuality": False,
+            "session": inst
+        }
         print(f"[SEND] URL: {url}")
-        print(f"[SEND] Payload: number={number}, text={text[:50]}...")
+        print(f"[SEND] Payload: {json.dumps(payload)}")
         res = requests.post(url, json=payload, headers=get_waha_headers(), timeout=30)
         print(f"[SEND] Response status: {res.status_code}")
         print(f"[SEND] Response body: {res.text[:300]}")
