@@ -2764,14 +2764,30 @@ def api_fix_13_digits():
                 old_id = c.id
                 new_id = f"c_{new_number}_{c.instance}"
                 
-                db_sql.session.execute(
-                    db_sql.text("UPDATE message SET contact_id = :new_id WHERE contact_id = :old_id"),
-                    {"new_id": new_id, "old_id": old_id}
-                )
-                db_sql.session.execute(
-                    db_sql.text("UPDATE contact SET id = :new_id, phone = :new_phone, name = :new_name WHERE id = :old_id"),
-                    {"new_id": new_id, "new_phone": new_number, "new_name": new_number if c.name == number else c.name, "old_id": old_id}
-                )
+                # Verificar se o contato novo já existe, senao cria
+                new_contact = Contact.query.get(new_id)
+                if not new_contact:
+                    new_contact = Contact(
+                        id=new_id,
+                        name=new_number if c.name == number else c.name,
+                        phone=new_number,
+                        avatar=c.avatar,
+                        instance=c.instance,
+                        tags=c.tags,
+                        last_msg=c.last_msg,
+                        last_msg_time=c.last_msg_time,
+                        unread=c.unread,
+                        assigned_to=c.assigned_to,
+                        assigned_name=c.assigned_name
+                    )
+                    db_sql.session.add(new_contact)
+                    db_sql.session.flush() # Salva no banco para que a foreign key seja satisfeita
+                
+                # Atualizar as mensagens para apontar para o novo contato
+                Message.query.filter_by(contact_id=old_id).update({"contact_id": new_id})
+                
+                # Deletar o contato antigo
+                db_sql.session.delete(c)
                 updated_contacts += 1
         
         db_sql.session.commit()
