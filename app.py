@@ -3208,7 +3208,15 @@ def stream_media(media_type):
                 
             # 3. Fallback 3 para NOWEB antigo: Arquivo direto
             if res.status_code == 404:
-                ext = 'oga' if media_type == 'audio' else ('jpeg' if media_type == 'image' else 'mp4')
+                req_filename = request.args.get('filename', '')
+                _, req_ext = os.path.splitext(req_filename)
+                req_ext = req_ext.lstrip('.')
+                
+                if media_type == 'document':
+                    ext = req_ext if req_ext else 'pdf'
+                else:
+                    ext = 'oga' if media_type == 'audio' else ('jpeg' if media_type == 'image' else 'mp4')
+                    
                 print(f"[{media_type.capitalize()} Proxy] Tentando URL direta do NOWEB: {short_id}.{ext}")
                 waha_url_direct = f"{WAHA_API_URL}/api/files/{instance}/{short_id}.{ext}"
                 res = requests.get(waha_url_direct, headers=get_waha_headers(), timeout=10)
