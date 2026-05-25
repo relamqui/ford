@@ -2796,6 +2796,51 @@ def api_fix_13_digits():
         db_sql.session.rollback()
         return jsonify({'error': str(e), 'success': False}), 500
 
+@app.route('/api/admin/migrate-to-corpal', methods=['POST'])
+@auth_required
+@admin_required
+def api_migrate_to_corpal():
+    try:
+        updated_contacts = 0
+        contacts = Contact.query.all()
+        for c in contacts:
+            if c.instance != 'corpal':
+                old_id = c.id
+                new_id = f"c_{c.phone}_corpal"
+                
+                new_contact = Contact.query.get(new_id)
+                if not new_contact:
+                    new_contact = Contact(
+                        id=new_id,
+                        name=c.name,
+                        phone=c.phone,
+                        avatar=c.avatar,
+                        instance='corpal',
+                        tags=c.tags,
+                        last_msg=c.last_msg,
+                        last_msg_time=c.last_msg_time,
+                        unread=c.unread,
+                        assigned_to=c.assigned_to,
+                        assigned_name=c.assigned_name
+                    )
+                    db_sql.session.add(new_contact)
+                    db_sql.session.flush()
+                
+                # Update messages
+                Message.query.filter_by(contact_id=old_id).update({
+                    "contact_id": new_id,
+                    "instance": "corpal"
+                })
+                
+                db_sql.session.delete(c)
+                updated_contacts += 1
+                
+        db_sql.session.commit()
+        return jsonify({'success': True, 'updated': updated_contacts})
+    except Exception as e:
+        db_sql.session.rollback()
+        return jsonify({'error': str(e), 'success': False}), 500
+
 @app.route('/api/chat/transfer', methods=['POST'])
 @auth_required
 def chat_transfer():
