@@ -1217,11 +1217,12 @@ def send_audio():
         
         # Salvar o arquivo localmente para poder reproduzir dps (já que o WAHA não armazena arquivos enviados)
         try:
-            import base64
+            import base64, re
             media_dir = os.path.join(DATA_DIR, 'media')
             os.makedirs(media_dir, exist_ok=True)
-            # Fix padding se faltar
-            pad_raw = audio_raw + "=" * ((4 - len(audio_raw) % 4) % 4)
+            # Remover quebras de linha e espaços antes de calcular o padding
+            clean_b64 = re.sub(r'[^A-Za-z0-9+/]', '', audio_raw)
+            pad_raw = clean_b64 + "=" * ((4 - len(clean_b64) % 4) % 4)
             with open(os.path.join(media_dir, msg_id), 'wb') as f:
                 f.write(base64.b64decode(pad_raw))
         except Exception as e:
@@ -3094,7 +3095,9 @@ def stream_media(media_type):
                         content_type = json_data['mimetype']
                         
                     if 'data' in json_data:
+                        import re
                         raw = json_data['data']
+                        raw = re.sub(r'[^A-Za-z0-9+/]', '', raw)
                         raw += "=" * ((4 - len(raw) % 4) % 4)
                         file_bytes = base64.b64decode(raw)
                     elif 'url' in json_data:
