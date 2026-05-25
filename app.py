@@ -1202,7 +1202,8 @@ def send_audio():
             "file": {
                 "mimetype": mimetype,
                 "data": audio_raw
-            }
+            },
+            "convert": True
         }
         print(f"[Send Audio] Enviando audio para {number} via {inst}")
         res = requests.post(url, json=payload, headers=get_waha_headers(), timeout=30)
