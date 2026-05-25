@@ -1220,8 +1220,10 @@ def send_audio():
             import base64
             media_dir = os.path.join(DATA_DIR, 'media')
             os.makedirs(media_dir, exist_ok=True)
+            # Fix padding se faltar
+            pad_raw = audio_raw + "=" * ((4 - len(audio_raw) % 4) % 4)
             with open(os.path.join(media_dir, msg_id), 'wb') as f:
-                f.write(base64.b64decode(audio_raw))
+                f.write(base64.b64decode(pad_raw))
         except Exception as e:
             print(f"[Send Audio] Erro ao salvar arquivo local: {e}")
 
@@ -3056,18 +3058,47 @@ def stream_media(media_type):
             print(f"[{media_type.capitalize()} Proxy] Arquivo não encontrado pelo ID curto. Tentando ID longo...")
             waha_url_long = f"{WAHA_API_URL}/api/files?session={instance}&messageId={msg_id}"
             res = requests.get(waha_url_long, headers=get_waha_headers(), timeout=15)
+            
+        # Fallback 3 para NOWEB: Arquivo direto com extensão
+        if res.status_code == 404:
+            ext = 'oga' if media_type == 'audio' else ('jpeg' if media_type == 'image' else 'mp4')
+            print(f"[{media_type.capitalize()} Proxy] Tentando URL direta do NOWEB: {short_id}.{ext}")
+            waha_url_direct = f"{WAHA_API_URL}/api/files/{instance}/{short_id}.{ext}"
+            res = requests.get(waha_url_direct, headers=get_waha_headers(), timeout=15)
+
         print(f"[{media_type.capitalize()} Proxy] status={res.status_code} resp_len={len(res.content)}")
+        
         if res.status_code in (200, 201):
-            # WAHA retorna o arquivo binário diretamente
-            content_type = res.headers.get('Content-Type', 'application/octet-stream')
+            file_bytes = res.content
+            ctype_waha = res.headers.get('Content-Type', '')
             
-            # Default mimetypes based on requested media_type
-            if content_type == 'application/octet-stream':
-                if media_type == 'audio': content_type = 'audio/ogg'
-                elif media_type == 'image': content_type = 'image/jpeg'
-                elif media_type == 'video': content_type = 'video/mp4'
+            # Se o WAHA retornou JSON com base64
+            if 'application/json' in ctype_waha:
+                try:
+                    import base64
+                    json_data = res.json()
+                    if 'data' in json_data:
+                        raw = json_data['data']
+                        raw += "=" * ((4 - len(raw) % 4) % 4)
+                        file_bytes = base64.b64decode(raw)
+                        if 'mimetype' in json_data:
+                            content_type = json_data['mimetype']
+                except Exception as e:
+                    print("Erro ao decodificar JSON do WAHA:", e)
+            else:
+                if ctype_waha and ctype_waha != 'application/octet-stream':
+                    content_type = ctype_waha
+                    
+            # Salvar no cache local para acelerar futuras requisições
+            try:
+                os.makedirs(media_dir, exist_ok=True)
+                with open(local_path, 'wb') as f:
+                    f.write(file_bytes)
+            except Exception as e:
+                pass
             
-            return Response(res.content, mimetype=content_type,
+            return Response(file_bytes, mimetype=content_type,
+
                 headers={'Content-Disposition': 'inline', 'Accept-Ranges': 'bytes',
                          'Cache-Control': 'public, max-age=3600'})
         return jsonify({'error': f'Nao foi possivel buscar {media_type}', 'waha_status': res.status_code}), 502
