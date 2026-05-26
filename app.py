@@ -2543,7 +2543,7 @@ def create_contact():
     if not contact:
         contact = Contact(
             id=contact_id,
-            name="+" + phone,
+            name=phone,
             phone=phone,
             avatar=phone[0] if phone else "?",
             instance=instance,
