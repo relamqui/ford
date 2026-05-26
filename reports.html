@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WP CRM — Relatórios SLA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/dashboard.css" />
+  <style>
+    body {
+      height: auto;
+      overflow: auto;
+    }
+    .admin-container {
+      padding: 40px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .admin-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 30px;
+    }
+    .back-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 14px;
+      margin-bottom: 20px;
+      border: none;
+      background: none;
+      cursor: pointer;
+    }
+    .back-btn:hover {
+      color: var(--text-primary);
+    }
+    
+    .filters-section {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 24px;
+      display: flex;
+      gap: 16px;
+      align-items: flex-end;
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .form-group label {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+    .form-group input {
+      padding: 10px;
+      border-radius: 8px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      color: white;
+      outline: none;
+    }
+    .btn-primary {
+      background: var(--green);
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      background: var(--bg-card);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    th {
+      background: rgba(0, 0, 0, 0.2);
+      color: var(--text-secondary);
+      font-weight: 600;
+    }
+    td {
+      color: var(--text-primary);
+    }
+    .time-badge {
+      background: rgba(255, 255, 255, 0.1);
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="admin-container">
+    <button class="back-btn" onclick="location.href='dashboard.html'">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="19" y1="12" x2="5" y2="12" />
+        <polyline points="12 19 5 12 12 5" />
+      </svg>
+      Voltar ao Dashboard
+    </button>
+
+    <div class="admin-header">
+      <h2>Relatórios SLA (Tempo de Atendimento)</h2>
+    </div>
+
+    <div class="filters-section">
+      <div class="form-group">
+        <label>Data Início</label>
+        <input type="date" id="filterStart">
+      </div>
+      <div class="form-group">
+        <label>Data Fim</label>
+        <input type="date" id="filterEnd">
+      </div>
+      <button class="btn-primary" onclick="loadReports()">Filtrar</button>
+    </div>
+
+    <div style="overflow-x: auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Cliente</th>
+            <th>Filial/Setor</th>
+            <th>Atendente</th>
+            <th>Espera na Fila</th>
+            <th>1ª Resposta</th>
+            <th>Média Contínua</th>
+          </tr>
+        </thead>
+        <tbody id="reportsBody">
+          <tr>
+            <td colspan="7" style="text-align: center; color: var(--text-muted);">Carregando relatórios...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = window.location.origin;
+
+    window.onload = () => {
+      const token = localStorage.getItem('wp_crm_token');
+      if (!token) window.location.href = 'index.html';
+      
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById('filterStart').value = today;
+      document.getElementById('filterEnd').value = today;
+      
+      loadReports();
+    };
+
+    function formatTime(seconds) {
+      if (seconds === null || seconds === undefined) return '-';
+      const m = Math.floor(seconds / 60);
+      const s = Math.floor(seconds % 60);
+      return `${m}m ${s}s`;
+    }
+
+    async function loadReports() {
+      const start = document.getElementById('filterStart').value;
+      const end = document.getElementById('filterEnd').value;
+      const tbody = document.getElementById('reportsBody');
+      
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">Carregando...</td></tr>';
+      
+      try {
+        let url = `${API_URL}/api/reports/sla`;
+        const params = new URLSearchParams();
+        if (start) params.append('start_date', start);
+        if (end) params.append('end_date', end);
+        if (params.toString()) url += `?${params.toString()}`;
+
+        const response = await fetch(url, {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('wp_crm_token')}` }
+        });
+        
+        const res = await response.json();
+        
+        if (!response.ok) {
+          tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#e74c3c">${res.error || 'Erro'}</td></tr>`;
+          return;
+        }
+
+        const data = res.data || [];
+        if (data.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">Nenhum registro encontrado.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data.map(item => `
+          <tr>
+            <td>${new Date(item.criado_em).toLocaleString('pt-BR')}</td>
+            <td>${item.numero}</td>
+            <td>${item.filial || '-'} / ${item.setor || '-'}</td>
+            <td>${item.atendente || 'Não assumido'}</td>
+            <td><span class="time-badge">${formatTime(item.tempo_na_fila_segundos)}</span></td>
+            <td><span class="time-badge">${formatTime(item.tempo_primeira_resposta_segundos)}</span></td>
+            <td><span class="time-badge" title="${item.qtd_respostas_atendente} respostas analisadas">${formatTime(item.media_tempo_resposta_segundos)}</span></td>
+          </tr>
+        `).join('');
+
+      } catch (err) {
+        console.error(err);
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#e74c3c">Erro ao carregar dados.</td></tr>';
+      }
+    }
+  </script>
+</body>
+</html>

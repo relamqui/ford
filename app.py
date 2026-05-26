@@ -142,6 +142,23 @@ class AtendimentoChat(db_sql.Model):
     # Timestamp ISO de quando o status mudou para 'atendente' (início da espera)
     atendente_desde = db_sql.Column(db_sql.Text, nullable=True)
 
+class SlaHistory(db_sql.Model):
+    __tablename__ = 'sla_history'
+    id = db_sql.Column(db_sql.Integer, primary_key=True, autoincrement=True)
+    numero = db_sql.Column(db_sql.String(50), nullable=False)
+    filial = db_sql.Column(db_sql.String(100), nullable=True)
+    setor = db_sql.Column(db_sql.String(100), nullable=True)
+    atendente = db_sql.Column(db_sql.String(100), nullable=True)
+    tempo_na_fila_segundos = db_sql.Column(db_sql.Integer, nullable=True)
+    tempo_primeira_resposta_segundos = db_sql.Column(db_sql.Integer, nullable=True)
+    soma_tempo_resposta_segundos = db_sql.Column(db_sql.Integer, default=0)
+    qtd_respostas_atendente = db_sql.Column(db_sql.Integer, default=0)
+    ultimo_horario_mensagem_cliente = db_sql.Column(db_sql.Text, nullable=True)
+    entrou_na_fila_em = db_sql.Column(db_sql.Text, nullable=True)
+    assumido_em = db_sql.Column(db_sql.Text, nullable=True)
+    finalizado_em = db_sql.Column(db_sql.Text, nullable=True)
+    criado_em = db_sql.Column(db_sql.Text, nullable=False)
+
 # ─── Utils ──────────────────────────────────────────────────────────────────
 def normalize_br_phone(phone_str):
     if not phone_str: return ""
@@ -168,6 +185,64 @@ def get_media_base64(instance, msg_data):
     except Exception as e:
         print(f"Erro ao baixar midia base64 (WAHA): {e}")
     return None
+
+def track_sla_event(numero, filial=None, setor=None, atendente=None, event_type='QUEUE_ENTER'):
+    """
+    event_type: 'QUEUE_ENTER', 'ASSIGNED', 'CLIENT_MSG', 'ATTENDANT_MSG', 'RELEASED'
+    """
+    try:
+        now_iso = get_now().isoformat()
+        
+        # Busca SLA atual em aberto (sem finalizado_em)
+        sla = SlaHistory.query.filter_by(numero=numero).filter(SlaHistory.finalizado_em == None).order_by(SlaHistory.id.desc()).first()
+        
+        if event_type == 'QUEUE_ENTER':
+            # Se já houver um, vamos fechar para abrir um novo ciclo na fila
+            if sla:
+                sla.finalizado_em = now_iso
+            # Cria novo
+            sla = SlaHistory(
+                numero=numero, filial=filial, setor=setor,
+                entrou_na_fila_em=now_iso, criado_em=now_iso
+            )
+            db_sql.session.add(sla)
+            
+        elif sla:
+            if event_type == 'ASSIGNED':
+                sla.atendente = atendente
+                sla.assumido_em = now_iso
+                if sla.entrou_na_fila_em:
+                    dt_fila = datetime.datetime.fromisoformat(sla.entrou_na_fila_em)
+                    sla.tempo_na_fila_segundos = int((get_now() - dt_fila).total_seconds())
+                    
+            elif event_type == 'CLIENT_MSG':
+                # Só registra se já foi assumido por alguém
+                if sla.assumido_em:
+                    sla.ultimo_horario_mensagem_cliente = now_iso
+                    
+            elif event_type == 'ATTENDANT_MSG':
+                # Primeira resposta
+                if not sla.tempo_primeira_resposta_segundos and sla.assumido_em:
+                    dt_ass = datetime.datetime.fromisoformat(sla.assumido_em)
+                    sla.tempo_primeira_resposta_segundos = int((get_now() - dt_ass).total_seconds())
+                    
+                # Respostas subsequentes
+                if sla.ultimo_horario_mensagem_cliente:
+                    dt_cliente = datetime.datetime.fromisoformat(sla.ultimo_horario_mensagem_cliente)
+                    diff = int((get_now() - dt_cliente).total_seconds())
+                    if diff < 0: diff = 0
+                    sla.soma_tempo_resposta_segundos = (sla.soma_tempo_resposta_segundos or 0) + diff
+                    sla.qtd_respostas_atendente = (sla.qtd_respostas_atendente or 0) + 1
+                    # Limpa o último horário para não contar de novo a mesma msg
+                    sla.ultimo_horario_mensagem_cliente = None
+                    
+            elif event_type == 'RELEASED':
+                sla.finalizado_em = now_iso
+                
+        db_sql.session.commit()
+    except Exception as e:
+        db_sql.session.rollback()
+        print(f"Erro em track_sla_event: {e}")
 
 # ─── Database JSON Fallback / Migration ──────────────────────────────────────
 def load_db():
@@ -427,6 +502,9 @@ def add_bot_tag():
                 print(f"[BOT/TAGS] Removendo tag antiga: {old_tag}")
             current_tags.append(new_ftag)
             added = True
+            
+            # Registra no SLA que o chat entrou na fila deste setor
+            track_sla_event(phone, filial=filial, setor=setor, event_type='QUEUE_ENTER')
     elif filial:
         if filial not in current_tags:
             current_tags.append(filial)
@@ -2217,6 +2295,10 @@ def webhook():
                     instance=instance
                 )
                 db_sql.session.add(new_msg)
+                
+                # Registra evento SLA de mensagem
+                track_sla_event(phone, event_type='ATTENDANT_MSG' if fromMe else 'CLIENT_MSG')
+                
             db_sql.session.commit()
 
             # --- Corpal Webhook (Lead or outgoing message) ---
@@ -2655,6 +2737,8 @@ def assign_chat(id):
     
     db_sql.session.commit()
     
+    track_sla_event(contact.phone, atendente=user.name, event_type='ASSIGNED')
+    
     # Corpal Webhook — evento atender
     now = get_now()
     _filial_a = None
@@ -2784,6 +2868,23 @@ def release_chat(id):
     flag_modified(contact, 'tags')
     
     db_sql.session.commit()
+    
+    # Registra no SLA que o atendimento foi finalizado
+    track_sla_event(contact.phone, event_type='RELEASED')
+    
+    # Dispara Webhook NPS para o N8N
+    try:
+        nps_payload = {
+            "numero": contact.phone,
+            "instancia": contact.instance,
+            "atendente": old_name,
+            "filial": _filial_r,
+            "setor": _setor_r,
+            "timestamp": get_now().isoformat()
+        }
+        requests.post("https://n8n-n8n.ioms5g.easypanel.host/webhook/acionar-nps", json=nps_payload, timeout=5)
+    except Exception as nps_e:
+        print(f"Erro ao disparar webhook NPS: {nps_e}")
 
     # Resetar alertas de espera ao finalizar o atendimento
     try:
@@ -3076,6 +3177,9 @@ def chat_transfer():
         contact.assigned_name = None
     
     db_sql.session.commit()
+    
+    # Registra no SLA que o chat entrou na fila de transferência
+    track_sla_event(contact.phone, filial=filial, setor=setor, event_type='QUEUE_ENTER')
 
     # Ao transferir: reinicia o timer de espera (contagem começa do zero a partir da transferência)
     try:
@@ -3366,13 +3470,58 @@ def debug_webhook():
             return Response(f.read(), mimetype='application/json')
     return jsonify({})
 
+@app.route('/api/reports/sla', methods=['GET'])
+@auth_required
+@admin_or_gestor_required
+def report_sla():
+    """
+    Retorna os dados de SLA (Tempo de Fila, 1ª Resposta, Tempo de Resposta Contínuo).
+    Pode filtrar por data (start_date, end_date).
+    """
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
+    query = SlaHistory.query
+    
+    if start_date:
+        query = query.filter(SlaHistory.criado_em >= start_date)
+    if end_date:
+        query = query.filter(SlaHistory.criado_em <= end_date + 'T23:59:59')
+        
+    records = query.order_by(SlaHistory.id.desc()).all()
+    
+    data = []
+    for r in records:
+        media_continua = 0
+        if r.qtd_respostas_atendente and r.qtd_respostas_atendente > 0:
+            media_continua = r.soma_tempo_resposta_segundos / r.qtd_respostas_atendente
+            
+        data.append({
+            'id': r.id,
+            'numero': r.numero,
+            'filial': r.filial,
+            'setor': r.setor,
+            'atendente': r.atendente,
+            'entrou_na_fila_em': r.entrou_na_fila_em,
+            'assumido_em': r.assumido_em,
+            'finalizado_em': r.finalizado_em,
+            'tempo_na_fila_segundos': r.tempo_na_fila_segundos,
+            'tempo_primeira_resposta_segundos': r.tempo_primeira_resposta_segundos,
+            'qtd_respostas_atendente': r.qtd_respostas_atendente,
+            'soma_tempo_resposta_segundos': r.soma_tempo_resposta_segundos,
+            'media_tempo_resposta_segundos': media_continua,
+            'criado_em': r.criado_em
+        })
+        
+    return jsonify({'success': True, 'data': data}), 200
+
 @app.route('/')
 def index_page():
     return send_from_directory(ROOT_DIR, 'index.html')
 
 @app.route('/<path:path>')
 def serve_frontend(path):
-    if path in ('index.html', 'dashboard.html', 'admin.html'):
+    if path in ('index.html', 'dashboard.html', 'admin.html', 'reports.html'):
         return send_from_directory(ROOT_DIR, path)
     if path.startswith('css/') or path.startswith('js/'):
         return send_from_directory(ROOT_DIR, path)
