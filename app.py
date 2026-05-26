@@ -2895,7 +2895,7 @@ def release_chat(id):
     try:
         atend_chat_rel = AtendimentoChat.query.filter_by(numero=contact.phone).first()
         if atend_chat_rel:
-            atend_chat_rel.status = 'finalizado'
+            atend_chat_rel.status = 'bot'
             atend_chat_rel.atendente = ''
             atend_chat_rel.atendente_desde = None
             atend_chat_rel.alerta_20min_enviado = False
