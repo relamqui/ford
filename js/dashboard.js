@@ -711,18 +711,23 @@ function renderMessages(messages) {
     let ticks = '';
     if (msg.type === 'out') {
       const ack = msg.ack !== undefined ? msg.ack : 2; // Padrão antigo 2
+      const iconClock = `<svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor"><path d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM0 8a8 8 0 1116 0A8 8 0 010 8z"></path><path d="M7.5 4.5v3.65l2.6 1.5.75-1.3-1.85-1.1V4.5h-1.5z"></path></svg>`;
+      const iconSent = `<svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor"><path d="M13.65 3.35a.75.75 0 010 1.06l-7.5 7.5a.75.75 0 01-1.06 0l-3.5-3.5a.75.75 0 111.06-1.06l2.97 2.97 6.97-6.97a.75.75 0 011.06 0z"></path></svg>`;
+      const iconDelivered = `<svg viewBox="0 0 20 16" width="16" height="13" fill="currentColor"><path d="M19.65 3.35a.75.75 0 010 1.06l-7.5 7.5a.75.75 0 01-1.06 0l-3.5-3.5a.75.75 0 111.06-1.06l2.97 2.97 6.97-6.97a.75.75 0 011.06 0z"></path><path d="M14.65 3.35a.75.75 0 010 1.06l-2.5 2.5a.75.75 0 11-1.06-1.06l2.5-2.5a.75.75 0 011.06 0zM5.35 11.85a.75.75 0 101.06-1.06L3.91 8.29a.75.75 0 10-1.06 1.06l2.5 2.5z"></path></svg>`;
+      const iconError = `<svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M7.002 11a1 1 0 1 1 2 0 1 1 0 0 1-2 0zM7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 4.995z"/></svg>`;
+      
       if (ack === 0) {
-        ticks = `<span class="msg-ticks" style="color: #999;" title="Pendente"><i class="far fa-clock"></i></span>`;
+        ticks = `<span class="msg-ticks" style="color: #999; margin-left:4px; display:inline-flex; align-items:center;" title="Pendente">${iconClock}</span>`;
       } else if (ack === 1) {
-        ticks = `<span class="msg-ticks" style="color: #999;" title="Enviado">✓</span>`;
+        ticks = `<span class="msg-ticks" style="color: #999; margin-left:4px; display:inline-flex; align-items:center;" title="Enviado">${iconSent}</span>`;
       } else if (ack === 2) {
-        ticks = `<span class="msg-ticks" style="color: #999;" title="Entregue">✓✓</span>`;
+        ticks = `<span class="msg-ticks" style="color: #999; margin-left:4px; display:inline-flex; align-items:center;" title="Entregue">${iconDelivered}</span>`;
       } else if (ack === 3 || ack === 4) {
-        ticks = `<span class="msg-ticks" style="color: #34B7F1;" title="Lido">✓✓</span>`;
+        ticks = `<span class="msg-ticks" style="color: #34B7F1; margin-left:4px; display:inline-flex; align-items:center;" title="Lido">${iconDelivered}</span>`;
       } else if (ack === -1) {
-        ticks = `<span class="msg-ticks" style="color: #f44336;" title="Erro"><i class="fas fa-exclamation-circle"></i></span>`;
+        ticks = `<span class="msg-ticks" style="color: #f44336; margin-left:4px; display:inline-flex; align-items:center;" title="Erro">${iconError}</span>`;
       } else {
-        ticks = `<span class="msg-ticks" style="color: #999;">✓✓</span>`;
+        ticks = `<span class="msg-ticks" style="color: #999; margin-left:4px; display:inline-flex; align-items:center;">${iconDelivered}</span>`;
       }
     }
 
