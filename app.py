@@ -2156,6 +2156,51 @@ def webhook():
                 elif payload.get('vCards'):
                     msg_type = 'contact'
 
+            # --- DOWNLOAD AUTOMÁTICO DE MEDIA DA PAYLOAD DO WAHA ---
+            if payload.get('hasMedia') and 'media' in payload:
+                media_info = payload.get('media', {})
+                media_url = media_info.get('url')
+                media_b64 = media_info.get('data')
+                
+                if media_url or media_b64:
+                    media_dir = os.path.join(DATA_DIR, 'media')
+                    os.makedirs(media_dir, exist_ok=True)
+                    # waha_id pode ter prefixos, tentar extrair o hash para o nome do arquivo
+                    short_id = waha_id.split('_')[-1] if '_' in waha_id else waha_id
+                    
+                    # Descobrir a extensao
+                    ext = ''
+                    if msg_type == 'image': ext = '.jpeg'
+                    elif msg_type in ('audio', 'voice', 'ptt'): ext = '.oga'
+                    elif msg_type == 'video': ext = '.mp4'
+                    elif msg_type == 'document': ext = '.pdf'
+                    
+                    filepath = os.path.join(media_dir, f"{short_id}{ext}")
+                    
+                    try:
+                        if media_b64:
+                            import base64
+                            with open(filepath, 'wb') as f:
+                                f.write(base64.b64decode(media_b64))
+                            print(f"[Media] Arquivo {filepath} salvo localmente via Base64 do webhook")
+                        elif media_url:
+                            # Corrige URL caso venha localhost
+                            if media_url.startswith('http://localhost'):
+                                from urllib.parse import urlparse
+                                parsed = urlparse(media_url)
+                                media_url = f"{WAHA_API_URL}{parsed.path}?{parsed.query}" if parsed.query else f"{WAHA_API_URL}{parsed.path}"
+                                
+                            dl_res = requests.get(media_url, headers=get_waha_headers(), timeout=15)
+                            if dl_res.status_code == 200:
+                                with open(filepath, 'wb') as f:
+                                    f.write(dl_res.content)
+                                print(f"[Media] Arquivo {filepath} salvo localmente via URL {media_url} do webhook")
+                            else:
+                                print(f"[Media] Falha ao baixar da URL {media_url}: HTTP {dl_res.status_code}")
+                    except Exception as e:
+                        print(f"[Media] Erro ao salvar media: {e}")
+            # -------------------------------------------------------
+
             evo_data = {
                 "event": "messages.upsert",
                 "instance": session,
