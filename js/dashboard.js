@@ -2140,8 +2140,8 @@ function startNewChat() {
     return;
   }
 
-  if (number.length !== 12) {
-    showToast('Formato inválido! O número deve ter exatamente 12 dígitos, sem o 9º dígito (Ex: 553588887777)');
+  if (number.length !== 12 && number.length !== 13) {
+    showToast('Formato inválido! O número deve ter 12 ou 13 dígitos com DDI+DDD (Ex: 553588887777 ou 5535988887777)');
     return;
   }
 
