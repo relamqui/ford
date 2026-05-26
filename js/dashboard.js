@@ -1068,8 +1068,11 @@ async function sendMessage() {
     }
     
     // Update the temporary ID with the real ID from the backend to avoid duplicate from webhook
-    const realId = data.key?.id || data.messageId || data.id;
-    if (realId) {
+    let realId = data.key?.id || data.messageId || data.id;
+    if (typeof realId === 'object' && realId !== null) {
+      realId = realId.id || realId._serialized || realId;
+    }
+    if (realId && typeof realId === 'string') {
       newMsg.id = realId;
     }
     

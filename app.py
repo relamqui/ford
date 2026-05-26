@@ -2095,13 +2095,18 @@ def webhook():
                 if waha_id and '_' in waha_id:
                     db_msg_id = waha_id.split('_')[-1]
                 
-                # Tenta atualizar no BD
-                msg_obj = Message.query.get(db_msg_id)
+                # Tenta atualizar no BD (case-insensitive para lidar com hashes do WAHA/Baileys)
+                msg_obj = Message.query.filter(Message.id.ilike(db_msg_id)).first()
                 if not msg_obj:
-                    # Fallback pro id completo caso tenha sido salvo assim
-                    msg_obj = Message.query.get(waha_id)
+                    # Fallback pro id completo
+                    msg_obj = Message.query.filter(Message.id.ilike(waha_id)).first()
                     if msg_obj:
-                        db_msg_id = waha_id
+                        db_msg_id = msg_obj.id
+                elif msg_obj:
+                    # Garantir que o db_msg_id enviado ao front seja exatamente como está no BD
+                    db_msg_id = msg_obj.id
+                
+                print(f"[ACK] Recebido ack={ack_val} ({ack_name}) para msg={waha_id}. Encontrou BD? {'Sim' if msg_obj else 'Nao'}")
                         
                 if msg_obj:
                     msg_obj.ack = ack_val
