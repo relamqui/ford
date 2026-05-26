@@ -2790,11 +2790,12 @@ def release_chat(id):
         atend_chat_rel = AtendimentoChat.query.filter_by(numero=contact.phone).first()
         if atend_chat_rel:
             atend_chat_rel.status = 'finalizado'
+            atend_chat_rel.atendente = ''
             atend_chat_rel.atendente_desde = None
             atend_chat_rel.alerta_20min_enviado = False
             atend_chat_rel.alerta_40min_enviado = False
             db_sql.session.commit()
-            print(f"[RELEASE] Alertas resetados para {contact.phone}")
+            print(f"[RELEASE] Alertas e atendente resetados para {contact.phone}")
     except Exception as e_rel:
         db_sql.session.rollback()
         print(f"Erro ao resetar alertas no release: {e_rel}")
