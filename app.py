@@ -450,6 +450,11 @@ def add_bot_tag():
     if not phone or not inst:
         return jsonify({'error': 'phone e instance são obrigatórios'}), 400
         
+    if custom_tag and ':' in custom_tag and not (filial and setor):
+        partes = custom_tag.split(':', 1)
+        filial = partes[0].strip()
+        setor = partes[1].strip()
+        
     phone = normalize_br_phone(str(phone).strip())
     inst = str(inst).strip()
     contact_id = f"c_{phone}_{inst}"
