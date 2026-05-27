@@ -1139,13 +1139,6 @@ def send_message():
     if not inst or not number:
         return jsonify({'error': 'Instância e número são obrigatórios'}), 400
 
-    # --- Instance permission check ---
-    if request.user.get('role') != 'admin':
-        user_obj_check = User.query.get(request.user['id'])
-        allowed = get_gestor_allowed_instances(user_obj_check)
-        if inst not in allowed:
-            return jsonify({'error': 'Você não tem permissão para enviar mensagens nesta instância.'}), 403
-
     # --- Chat locking check ---
     contact_id_check = f"c_{number}_{inst}"
     locked_contact = Contact.query.filter_by(id=contact_id_check).first()
@@ -1757,13 +1750,6 @@ def send_contact():
 
     if not inst or not number or not contact_phone:
         return jsonify({'error': 'instance, number e contact_phone são obrigatórios'}), 400
-
-    # --- Instance permission check ---
-    if request.user.get('role') != 'admin':
-        user_obj_check = User.query.get(request.user['id'])
-        allowed = get_gestor_allowed_instances(user_obj_check)
-        if inst not in allowed:
-            return jsonify({'error': 'Você não tem permissão para enviar mensagens nesta instância.'}), 403
 
     try:
         now = get_now()
