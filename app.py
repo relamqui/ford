@@ -56,6 +56,9 @@ print(f"[INIT] SocketIO async_mode={_async_mode}")
 JWT_SECRET = os.getenv('JWT_SECRET', 'secret')
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# Identificador único de inicialização para forçar refresh nos clientes quando o backend for atualizado/reiniciado
+SERVER_BOOT_ID = str(uuid.uuid4())
+
 # Configuração do Local de Armazenamento
 DATA_DIR = os.path.join(os.getcwd(), 'data')
 if not os.path.exists(DATA_DIR):
@@ -3848,6 +3851,7 @@ def serve_frontend(path):
 @socketio.on('connect')
 def test_connect():
     print('>>> Cliente conectado ao SocketIO')
+    emit('server_boot', {'boot_id': SERVER_BOOT_ID})
 
 @socketio.on('join_company')
 def on_join(company_id):

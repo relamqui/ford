@@ -181,6 +181,8 @@ async function loadContacts() {
   }
 }
 
+let currentBootId = null;
+
 function initSocket(token) {
   if (typeof io !== 'undefined') {
     socket = io(API_URL, {
@@ -199,6 +201,18 @@ function initSocket(token) {
         instances: userData.instances || [],
         role: userData.role || 'user'
       });
+    });
+
+    socket.on('server_boot', (data) => {
+      if (!currentBootId) {
+        currentBootId = data.boot_id;
+      } else if (currentBootId !== data.boot_id) {
+        console.log('Servidor atualizado/reiniciado! Recarregando a página para aplicar nova versão...');
+        window.location.reload();
+      } else {
+        console.log('Reconexão de rede detectada (sem reinício do servidor). Ressincronizando chats silenciosamente...');
+        loadContacts();
+      }
     });
 
     socket.on('whatsapp_event', (data) => {
