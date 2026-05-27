@@ -2418,6 +2418,7 @@ def webhook():
                                 "filial": req.filial,
                                 "setor": req.setor,
                                 "reason": req.reason,
+                                "is_first_time": False,
                                 "request_id": req.id
                             }
                             requests.post("https://n8n-n8n.ioms5g.easypanel.host/webhook/atendido", json=n8n_payload, timeout=5)
@@ -2903,7 +2904,7 @@ def create_contact_request():
             "is_first_time": True,
             "request_id": new_req.id
         }
-        requests.post("https://n8n-n8n.ioms5g.easypanel.host/webhook/solicitacao", json=n8n_payload, timeout=5)
+        requests.post("https://n8n-n8n.ioms5g.easypanel.host/webhook/atendido", json=n8n_payload, timeout=5)
     except Exception as e:
         print(f"Erro ao notificar N8N da solicitacao: {e}")
         
