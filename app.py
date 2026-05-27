@@ -2485,11 +2485,18 @@ def webhook():
                     if req:
                         req.status = 'ANSWERED'
                         
+                        # Atribuir o chat automaticamente para o atendente
+                        # Primeiro tenta buscar por email (novo padrão), se não achar tenta por nome (requests antigas)
+                        att_user = User.query.filter_by(email=req.attendant_name).first()
+                        if not att_user:
+                            att_user = User.query.filter_by(name=req.attendant_name).first()
+                            
                         # Notifica o N8N que o cliente respondeu
                         try:
                             n8n_payload = {
                                 "phone": req.phone,
-                                "attendant": req.attendant_name,
+                                "attendant": att_user.name if att_user else req.attendant_name,
+                                "attendant_email": req.attendant_name,
                                 "filial": req.filial,
                                 "setor": req.setor,
                                 "reason": req.reason,
@@ -2500,14 +2507,12 @@ def webhook():
                         except Exception as e:
                             print(f"Erro N8N atendido: {e}")
                             
-                        # Atribuir o chat automaticamente para o atendente
-                        att_user = User.query.filter_by(name=req.attendant_name).first()
                         if att_user:
                             contact.assigned_to = att_user.id
                             contact.assigned_name = att_user.name
                             tags = list(contact.tags or [])
                             tags = [t for t in tags if str(t).upper() != 'BOT']
-                            at_tag = f"Atendente: {att_user.name}"
+                            at_tag = f"Atendente: {att_user.email}"
                             if at_tag not in tags: tags.append(at_tag)
                             if att_user.filial and att_user.setor:
                                 fst = f"{att_user.filial}:{att_user.setor}"
@@ -2914,8 +2919,8 @@ def create_contact():
 @auth_required
 def list_contact_requests():
     user = User.query.get(request.user['id'])
-    # Retorna apenas as solicitações feitas pelo atendente logado
-    requests_db = ContactRequest.query.filter_by(attendant_name=user.name).order_by(ContactRequest.created_at.desc()).limit(50).all()
+    # Retorna apenas as solicitações feitas pelo atendente logado (agora rastreado por email)
+    requests_db = ContactRequest.query.filter_by(attendant_name=user.email).order_by(ContactRequest.created_at.desc()).limit(50).all()
     result = []
     for r in requests_db:
         result.append({
@@ -2952,8 +2957,9 @@ def create_contact_request():
     # Verificar se já existe uma solicitação pendente para este número
     existing_req = ContactRequest.query.filter_by(phone=phone, status='PENDING').first()
     if existing_req:
-        if existing_req.attendant_name != user.name:
-            return jsonify({'error': f'Este número já possui uma solicitação pendente pelo atendente {existing_req.attendant_name}.'}), 403
+        if existing_req.attendant_name != user.email:
+            # existing_req.attendant_name stores the email now
+            return jsonify({'error': f'Este número já possui uma solicitação pendente por outro atendente ({existing_req.attendant_name}).'}), 403
         else:
             return jsonify({'error': 'Você já possui uma solicitação pendente para este número.'}), 403
         
@@ -2966,7 +2972,7 @@ def create_contact_request():
     
     new_req = ContactRequest(
         phone=phone,
-        attendant_name=user.name,
+        attendant_name=user.email,  # Mudança crucial: gravamos o EMAIL para diferenciar homônimos
         filial=filial_name,
         setor=setor_name,
         reason=reason,
@@ -2981,6 +2987,7 @@ def create_contact_request():
         n8n_payload = {
             "phone": phone,
             "attendant": user.name,
+            "attendant_email": user.email, # N8N agora tem acesso ao e-mail exato
             "filial": filial_name,
             "setor": setor_name,
             "reason": reason,
