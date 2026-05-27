@@ -324,43 +324,25 @@
 
 <!-- Modal Solicitar Contato -->
 <div class="modal-overlay" id="newChatModal" style="display:none" onclick="closeNewChatModal()">
-  <div class="modal-box" onclick="event.stopPropagation()" style="max-width: 600px; max-height: 90vh; overflow-y: auto;">
+  <div class="modal-box" onclick="event.stopPropagation()" style="max-width: 400px;">
     <div class="modal-header">
-      <h3>Solicitar Contato ao Bot</h3>
+      <h3>Iniciar Nova Conversa</h3>
       <button class="icon-btn" onclick="closeNewChatModal()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
     <div style="padding: 20px;">
       <div style="margin-bottom: 15px;">
-        <label style="display:block;margin-bottom:5px;font-size:12px;color:var(--text-muted)">Número (com DDD e DDI)</label>
-        <input type="text" id="newChatNumber" placeholder="Ex: 5511999999999" 
+        <label style="display:block;margin-bottom:5px;font-size:12px;color:var(--text-muted)">Número (com DDD e DDI, Ex: 553599999999)</label>
+        <input type="text" id="newChatNumber" placeholder="Ex: 553599999999" 
           style="width:100%;padding:10px;background:#2a3942;border:1px solid #3b4a54;border-radius:8px;color:white;outline:none;">
       </div>
       <div style="margin-bottom: 20px;">
-        <label style="display:block;margin-bottom:5px;font-size:12px;color:var(--text-muted)">Motivo do Contato</label>
-        <textarea id="newChatReason" placeholder="Descreva o motivo pelo qual deseja entrar em contato..." 
-          style="width:100%;padding:10px;background:#2a3942;border:1px solid #3b4a54;border-radius:8px;color:white;outline:none;resize:vertical;min-height:80px;"></textarea>
+        <label style="display:block;margin-bottom:5px;font-size:12px;color:var(--text-muted)">Mensagem Inicial</label>
+        <textarea id="newChatReason" placeholder="Digite a mensagem..." 
+          style="width:100%;padding:10px;background:#2a3942;border:1px solid #3b4a54;border-radius:8px;color:white;outline:none;resize:vertical;min-height:80px;">Olá!</textarea>
       </div>
-      <button class="btn-save-notes" style="width:100%; margin-bottom: 30px;" onclick="startNewChat()">Solicitar ao Bot</button>
-      
-      <h4 style="margin-bottom: 10px; font-size: 14px; color: var(--text-muted); border-bottom: 1px solid #3b4a54; padding-bottom: 5px;">Suas Solicitações Recentes</h4>
-      <div style="overflow-x: auto;">
-        <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;">
-          <thead>
-            <tr style="border-bottom: 1px solid #3b4a54;">
-              <th style="padding: 8px 5px; color: var(--text-muted);">Número</th>
-              <th style="padding: 8px 5px; color: var(--text-muted);">Motivo</th>
-              <th style="padding: 8px 5px; color: var(--text-muted);">Data</th>
-              <th style="padding: 8px 5px; color: var(--text-muted);">Status</th>
-            </tr>
-          </thead>
-          <tbody id="contactRequestsTableBody">
-            <!-- Injetado via JS -->
-            <tr><td colspan="4" style="padding: 10px; text-align: center; color: var(--text-muted);">Carregando...</td></tr>
-          </tbody>
-        </table>
-      </div>
+      <button class="btn-save-notes" style="width:100%;" onclick="startNewChat()">Chamar</button>
     </div>
   </div>
 </div>

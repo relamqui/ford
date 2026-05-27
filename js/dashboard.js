@@ -2155,99 +2155,74 @@ async function showNewChat() {
   const modal = document.getElementById('newChatModal');
   modal.style.display = 'flex';
   document.getElementById('newChatNumber').value = '';
-  document.getElementById('newChatReason').value = '';
-  loadContactRequests();
+  document.getElementById('newChatReason').value = 'Olá!';
 }
 
 function closeNewChatModal() {
   document.getElementById('newChatModal').style.display = 'none';
 }
 
-function loadContactRequests() {
-  const tbody = document.getElementById('contactRequestsTableBody');
-  tbody.innerHTML = '<tr><td colspan="4" style="padding: 10px; text-align: center; color: var(--text-muted);">Carregando...</td></tr>';
-  
-  const token = localStorage.getItem('wp_crm_token');
-  fetch(`${API_URL}/api/contact-requests`, {
-    headers: { 'Authorization': `Bearer ${token}` }
-  })
-  .then(res => res.json())
-  .then(data => {
-    tbody.innerHTML = '';
-    if (data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="4" style="padding: 10px; text-align: center; color: var(--text-muted);">Nenhuma solicitação recente.</td></tr>';
-      return;
-    }
-    
-    data.forEach(req => {
-      const tr = document.createElement('tr');
-      tr.style.borderBottom = '1px solid #3b4a54';
-      
-      const statusIcon = req.status === 'PENDING' ? '🕒 Pendente' : '✅ Atendido';
-      const statusColor = req.status === 'PENDING' ? '#f0ad4e' : '#5cb85c';
-      
-      const dataObj = new Date(req.created_at);
-      const dataStr = dataObj.toLocaleDateString() + ' ' + dataObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      
-      tr.innerHTML = `
-        <td style="padding: 10px 5px; color: white;">${req.phone}</td>
-        <td style="padding: 10px 5px; color: #a6b0b6; max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(req.reason)}">${escapeHtml(req.reason)}</td>
-        <td style="padding: 10px 5px; color: #a6b0b6; font-size: 11px;">${dataStr}</td>
-        <td style="padding: 10px 5px; color: ${statusColor}; font-weight: bold; font-size: 11px;">${statusIcon}</td>
-      `;
-      tbody.appendChild(tr);
-    });
-  })
-  .catch(err => {
-    console.error('Erro ao buscar solicitações:', err);
-    tbody.innerHTML = '<tr><td colspan="4" style="padding: 10px; text-align: center; color: red;">Erro ao carregar histórico.</td></tr>';
-  });
-}
+
 
 function startNewChat() {
   const numberInput = document.getElementById('newChatNumber');
   const reasonInput = document.getElementById('newChatReason');
   
   const number = numberInput.value.trim().replace(/\D/g, '');
-  const reason = reasonInput.value.trim();
+  const text = reasonInput.value.trim();
 
-  if (!number || !reason) {
-    showToast('Preencha o número e o motivo');
+  if (!number) {
+    showToast('Preencha o número');
     return;
   }
 
-  if (number.length < 12 || number.length > 13) {
-    showToast('Formato inválido! O número deve ter 12 ou 13 dígitos numéricos.');
+  // Regra de 12 dígitos solicitada
+  if (number.length !== 12) {
+    showToast('O número deve ter exatamente 12 dígitos numéricos.');
     return;
+  }
+  
+  if (!text) {
+    showToast('Digite uma mensagem inicial');
+    return;
+  }
+
+  // Verifica se há instância selecionada (ou tenta pegar a primeira disponível)
+  let inst = currentInstance;
+  if (!inst && window.instancesList && window.instancesList.length > 0) {
+      inst = window.instancesList[0].name;
+  }
+  
+  if (!inst) {
+      showToast('Nenhuma instância selecionada para enviar a mensagem.');
+      return;
   }
 
   const token = localStorage.getItem('wp_crm_token');
   
-  fetch(`${API_URL}/api/contact-requests`, {
+  fetch(`${API_URL}/api/whatsapp/send`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`
     },
-    body: JSON.stringify({ phone: number, reason: reason })
+    body: JSON.stringify({ instance: inst, number: number, text: text })
   })
   .then(async res => {
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Erro ao enviar solicitação');
+    if (!res.ok) throw new Error(data.error || 'Erro ao enviar mensagem');
     return data;
   })
   .then(data => {
-    showToast(data.message || 'Solicitação enviada para o bot com sucesso!');
+    showToast('Mensagem enviada com sucesso!');
     numberInput.value = '';
-    reasonInput.value = '';
-    loadContactRequests(); // Atualiza a tabela com a nova requisição
+    reasonInput.value = 'Olá!';
+    closeNewChatModal();
+    // Recarrega contatos para exibir a nova conversa
+    loadContacts();
   })
   .catch(err => {
-    if (err.message.includes('solicitação pendente') || err.message.includes('em atendimento')) {
-      alert(err.message);
-    } else {
-      showToast(err.message || 'Erro de conexão ao enviar solicitação.');
-    }
+    showToast(err.message || 'Erro de conexão ao enviar mensagem.');
   });
 }
 
