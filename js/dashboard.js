@@ -2139,109 +2139,97 @@ async function openChatMenu() {
 
 async function showNewChat() {
   const modal = document.getElementById('newChatModal');
-  const select = document.getElementById('newChatInstance');
   modal.style.display = 'flex';
-  select.innerHTML = '<option value="">Carregando...</option>';
-
-  try {
-    const response = await fetch(`${API_URL}/api/whatsapp/instances`, {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('wp_crm_token')}` }
-    });
-    const instances = await response.json();
-    select.innerHTML = '';
-    
-    // Se o usuário for admin, mostra todas. Se não, filtra as dele.
-    instances.forEach(inst => {
-      const name = inst.name || inst.instanceName || (inst.instance && inst.instance.instanceName) || inst.id;
-      if (name) {
-        const opt = document.createElement('option');
-        opt.value = name;
-        opt.textContent = name;
-        select.appendChild(opt);
-      }
-    });
-    
-    if (select.children.length === 0) {
-      select.innerHTML = '<option value="">Nenhuma instância encontrada</option>';
-    }
-  } catch (err) {
-    console.error('Erro ao carregar instâncias para novo chat:', err);
-    select.innerHTML = '<option value="">Erro ao carregar</option>';
-  }
+  document.getElementById('newChatNumber').value = '';
+  document.getElementById('newChatReason').value = '';
+  loadContactRequests();
 }
 
 function closeNewChatModal() {
   document.getElementById('newChatModal').style.display = 'none';
 }
 
+function loadContactRequests() {
+  const tbody = document.getElementById('contactRequestsTableBody');
+  tbody.innerHTML = '<tr><td colspan="4" style="padding: 10px; text-align: center; color: var(--text-muted);">Carregando...</td></tr>';
+  
+  const token = localStorage.getItem('wp_crm_token');
+  fetch(`${API_URL}/api/contact-requests`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  })
+  .then(res => res.json())
+  .then(data => {
+    tbody.innerHTML = '';
+    if (data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="padding: 10px; text-align: center; color: var(--text-muted);">Nenhuma solicitação recente.</td></tr>';
+      return;
+    }
+    
+    data.forEach(req => {
+      const tr = document.createElement('tr');
+      tr.style.borderBottom = '1px solid #3b4a54';
+      
+      const statusIcon = req.status === 'PENDING' ? '🕒 Pendente' : '✅ Atendido';
+      const statusColor = req.status === 'PENDING' ? '#f0ad4e' : '#5cb85c';
+      
+      const dataObj = new Date(req.created_at);
+      const dataStr = dataObj.toLocaleDateString() + ' ' + dataObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      
+      tr.innerHTML = `
+        <td style="padding: 10px 5px; color: white;">${req.phone}</td>
+        <td style="padding: 10px 5px; color: #a6b0b6; max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(req.reason)}">${escapeHtml(req.reason)}</td>
+        <td style="padding: 10px 5px; color: #a6b0b6; font-size: 11px;">${dataStr}</td>
+        <td style="padding: 10px 5px; color: ${statusColor}; font-weight: bold; font-size: 11px;">${statusIcon}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  })
+  .catch(err => {
+    console.error('Erro ao buscar solicitações:', err);
+    tbody.innerHTML = '<tr><td colspan="4" style="padding: 10px; text-align: center; color: red;">Erro ao carregar histórico.</td></tr>';
+  });
+}
+
 function startNewChat() {
   const numberInput = document.getElementById('newChatNumber');
-  const instanceSelect = document.getElementById('newChatInstance');
+  const reasonInput = document.getElementById('newChatReason');
+  
   const number = numberInput.value.trim().replace(/\D/g, '');
-  const instance = instanceSelect.value;
+  const reason = reasonInput.value.trim();
 
-  if (!number || !instance) {
-    showToast('Preencha número e instância');
+  if (!number || !reason) {
+    showToast('Preencha o número e o motivo');
     return;
   }
 
-  if (number.length !== 12) {
-    showToast('Formato inválido! O número deve ter exatamente 12 dígitos, sem o 9º dígito (Ex: 553588887777)');
+  if (number.length < 12 || number.length > 13) {
+    showToast('Formato inválido! O número deve ter 12 ou 13 dígitos numéricos.');
     return;
   }
 
   const token = localStorage.getItem('wp_crm_token');
   
-  fetch(`${API_URL}/api/contacts`, {
+  fetch(`${API_URL}/api/contact-requests`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`
     },
-    body: JSON.stringify({ phone: number, instance: instance })
+    body: JSON.stringify({ phone: number, reason: reason })
   })
-  .then(res => {
-    if (!res.ok) throw res;
-    return res.json();
+  .then(async res => {
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Erro ao enviar solicitação');
+    return data;
   })
-  .then(newContactData => {
-    // Verifica se já existe localmente
-    let contact = CONTACTS.find(c => c.id === newContactData.id);
-    
-    if (!contact) {
-      contact = {
-        id: newContactData.id,
-        name: newContactData.name,
-        phone: newContactData.phone,
-        avatar: newContactData.avatar,
-        instance: newContactData.instance,
-        lastMsg: 'Iniciando conversa...',
-        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        unread: 0,
-        messages: [],
-        tags: newContactData.tags,
-        assigned_to: newContactData.assigned_to,
-        assigned_name: newContactData.assigned_name
-      };
-      CONTACTS.unshift(contact);
-    } else {
-        contact.assigned_to = newContactData.assigned_to;
-        contact.assigned_name = newContactData.assigned_name;
-        contact.tags = newContactData.tags;
-    }
-
-    closeNewChatModal();
-    renderChatList(getFilteredContacts());
-    openChat(contact.id);
+  .then(data => {
+    showToast(data.message || 'Solicitação enviada para o bot com sucesso!');
+    numberInput.value = '';
+    reasonInput.value = '';
+    loadContactRequests(); // Atualiza a tabela com a nova requisição
   })
-  .catch(async (err) => {
-    console.error(err);
-    if (err.json) {
-        const errorData = await err.json();
-        showToast(errorData.error || 'Erro ao iniciar conversa');
-    } else {
-        showToast('Erro de conexão ao iniciar chat.');
-    }
+  .catch(err => {
+    showToast(err.message || 'Erro de conexão ao enviar solicitação.');
   });
 }
 

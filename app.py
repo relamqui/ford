@@ -108,6 +108,17 @@ class Contact(db_sql.Model):
     avatar = db_sql.Column(db_sql.Text, nullable=True)
     instance = db_sql.Column(db_sql.String(100), nullable=True)
     tags = db_sql.Column(db_sql.JSON, default=['Novo Lead'])
+
+class ContactRequest(db_sql.Model):
+    id = db_sql.Column(db_sql.Integer, primary_key=True)
+    phone = db_sql.Column(db_sql.String(30), nullable=False)
+    attendant_name = db_sql.Column(db_sql.String(100), nullable=False)
+    filial = db_sql.Column(db_sql.String(150), nullable=True)
+    setor = db_sql.Column(db_sql.String(150), nullable=True)
+    reason = db_sql.Column(db_sql.Text, nullable=False)
+    status = db_sql.Column(db_sql.String(20), default='PENDING') # PENDING, ANSWERED
+    created_at = db_sql.Column(db_sql.DateTime, default=datetime.utcnow)
+    is_first_time = db_sql.Column(db_sql.Boolean, default=True)
     last_msg = db_sql.Column(db_sql.Text, nullable=True)
     last_msg_time = db_sql.Column(db_sql.String(20), nullable=True)
     unread = db_sql.Column(db_sql.Integer, default=0)
@@ -2392,6 +2403,55 @@ def webhook():
                 # Registra evento SLA de mensagem
                 track_sla_event(phone, event_type='ATTENDANT_MSG' if fromMe else 'CLIENT_MSG')
                 
+                if not fromMe:
+                    # --- Lógica de Solicitação de Contato (N8N Fila) ---
+                    # Verifica se este cliente estava na fila aguardando resposta
+                    req = ContactRequest.query.filter_by(phone=phone, status='PENDING').first()
+                    if req:
+                        req.status = 'ANSWERED'
+                        
+                        # Notifica o N8N que o cliente respondeu
+                        try:
+                            n8n_payload = {
+                                "phone": req.phone,
+                                "attendant": req.attendant_name,
+                                "filial": req.filial,
+                                "setor": req.setor,
+                                "reason": req.reason,
+                                "request_id": req.id
+                            }
+                            requests.post("https://n8n-n8n.ioms5g.easypanel.host/webhook/atendido", json=n8n_payload, timeout=5)
+                        except Exception as e:
+                            print(f"Erro N8N atendido: {e}")
+                            
+                        # Atribuir o chat automaticamente para o atendente
+                        att_user = User.query.filter_by(name=req.attendant_name).first()
+                        if att_user:
+                            contact.assigned_to = att_user.id
+                            contact.assigned_name = att_user.name
+                            tags = list(contact.tags or [])
+                            tags = [t for t in tags if str(t).upper() != 'BOT']
+                            at_tag = f"Atendente: {att_user.name}"
+                            if at_tag not in tags: tags.append(at_tag)
+                            if att_user.filial and att_user.setor:
+                                fst = f"{att_user.filial}:{att_user.setor}"
+                                if fst not in tags: tags.append(fst)
+                            contact.tags = tags
+                            flag_modified(contact, 'tags')
+                            
+                            # Atualiza AtendimentoChat
+                            agora_iso = get_now().isoformat()
+                            atend = AtendimentoChat.query.filter_by(numero=phone).first()
+                            if atend:
+                                atend.atendente = att_user.name
+                                atend.status = 'atendente'
+                                atend.ultimo_atendente = att_user.name
+                                atend.registro_time_chat = agora_iso
+                                atend.atendente_desde = agora_iso
+                            else:
+                                atend = AtendimentoChat(numero=phone, status='atendente', atendente=att_user.name, ultimo_atendente=att_user.name, registro_time_chat=agora_iso, atendente_desde=agora_iso)
+                                db_sql.session.add(atend)
+
             db_sql.session.commit()
 
             # --- Corpal Webhook (Lead or outgoing message) ---
@@ -2773,6 +2833,81 @@ def create_contact():
         'assigned_to': contact.assigned_to,
         'assigned_name': contact.assigned_name
     }), 201
+
+@app.route('/api/contact-requests', methods=['GET'])
+@auth_required
+def list_contact_requests():
+    user = User.query.get(request.user['id'])
+    # Retorna apenas as solicitações feitas pelo atendente logado
+    requests_db = ContactRequest.query.filter_by(attendant_name=user.name).order_by(ContactRequest.created_at.desc()).limit(50).all()
+    result = []
+    for r in requests_db:
+        result.append({
+            'id': r.id,
+            'phone': r.phone,
+            'attendant_name': r.attendant_name,
+            'reason': r.reason,
+            'status': r.status,
+            'created_at': r.created_at.isoformat() + 'Z'
+        })
+    return jsonify(result), 200
+
+@app.route('/api/contact-requests', methods=['POST'])
+@auth_required
+def create_contact_request():
+    data = request.json
+    phone = data.get('phone')
+    reason = data.get('reason')
+    
+    if not phone or not reason:
+        return jsonify({'error': 'Telefone e Motivo são obrigatórios'}), 400
+        
+    phone = normalize_br_phone(str(phone).strip())
+    if len(phone) < 12 or len(phone) > 13:
+        return jsonify({'error': 'Formato inválido! Insira DDI + DDD + Número (Ex: 5535999888777)'}), 400
+        
+    user = User.query.get(request.user['id'])
+    
+    # 1. Verificar se o número já está sendo atendido por outra pessoa
+    atend_chat = AtendimentoChat.query.filter_by(numero=phone).first()
+    if atend_chat and atend_chat.status == 'atendente' and atend_chat.atendente != user.name:
+        return jsonify({'error': f'Este número já está em atendimento por {atend_chat.atendente}.'}), 403
+        
+    # 2. Criar a solicitação
+    _f = Filial.query.get(user.filial_id) if user.filial_id else None
+    _s = Setor.query.get(user.setor_id) if user.setor_id else None
+    
+    filial_name = user.filial or (_f.name if _f else '')
+    setor_name = user.setor or (_s.name if _s else '')
+    
+    new_req = ContactRequest(
+        phone=phone,
+        attendant_name=user.name,
+        filial=filial_name,
+        setor=setor_name,
+        reason=reason,
+        status='PENDING',
+        is_first_time=True
+    )
+    db_sql.session.add(new_req)
+    db_sql.session.commit()
+    
+    # 3. Disparar webhook para o N8N (bot de disparo inicial)
+    try:
+        n8n_payload = {
+            "phone": phone,
+            "attendant": user.name,
+            "filial": filial_name,
+            "setor": setor_name,
+            "reason": reason,
+            "is_first_time": True,
+            "request_id": new_req.id
+        }
+        requests.post("https://n8n-n8n.ioms5g.easypanel.host/webhook/solicitacao", json=n8n_payload, timeout=5)
+    except Exception as e:
+        print(f"Erro ao notificar N8N da solicitacao: {e}")
+        
+    return jsonify({'success': True, 'message': 'Solicitação enviada com sucesso!'}), 201
 
 
 @app.route('/api/contacts/<id>/read', methods=['POST'])
