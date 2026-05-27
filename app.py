@@ -177,6 +177,8 @@ def normalize_br_phone(phone_str):
     p = str(phone_str)
     p = p.split('@')[0]
     p = "".join(filter(str.isdigit, p))
+    if len(p) == 13 and p.startswith('55') and p[4] == '9':
+        p = p[:4] + p[5:]
     return p
 
 def extract_waha_msg_id(res_data, fallback):
@@ -2212,12 +2214,18 @@ def webhook():
                         print(f"[Media] Erro ao salvar media: {e}")
             # -------------------------------------------------------
 
+            # --- Normalizar JID para 12 dígitos ---
+            raw_jid = waha_to if fromMe else waha_from
+            norm_phone = normalize_br_phone(raw_jid)
+            final_jid = f"{norm_phone}@s.whatsapp.net" if norm_phone else raw_jid
+            # ----------------------------------------
+            
             evo_data = {
                 "event": "messages.upsert",
                 "instance": session,
                 "data": {
                     "key": {
-                        "remoteJid": waha_to if fromMe else waha_from,
+                        "remoteJid": final_jid,
                         "fromMe": fromMe,
                         "id": waha_id
                     },
