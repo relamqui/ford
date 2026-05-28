@@ -1127,6 +1127,31 @@ def get_instances():
         print(f"Erro ao buscar instâncias: {str(e)}")
         return jsonify({'error': f"Erro na WAHA API: {str(e)}"}), 500
 
+def auto_assign_chat_to_sender(contact, user_data):
+    if not user_data: return
+    user_email = user_data.get('email', '')
+    contact.assigned_to = user_data.get('id')
+    contact.assigned_name = user_email
+    
+    tags = list(contact.tags or [])
+    tags = [t for t in tags if t != 'BOT']
+    at_tag = f"Atendente: {user_email}"
+    if at_tag not in tags:
+        tags.append(at_tag)
+        
+    f_id, s_id = user_data.get('filial_id'), user_data.get('setor_id')
+    if f_id and s_id:
+        _f = Filial.query.get(f_id)
+        _s = Setor.query.get(s_id)
+        if _f and _s:
+            fs_tag = f"{_f.name}:{_s.name}"
+            if fs_tag not in tags:
+                tags.append(fs_tag)
+                
+    contact.tags = tags
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(contact, 'tags')
+
 @app.route('/api/whatsapp/send', methods=['POST'])
 @auth_required
 def send_message():
@@ -1184,10 +1209,9 @@ def send_message():
         if contact:
             contact.last_msg = text
             contact.last_msg_time = time_str
-            contact.assigned_to = request.user['id']
-            contact.assigned_name = request.user.get('email')
+            auto_assign_chat_to_sender(contact, request.user)
         else:
-            new_contact = Contact(
+            contact = Contact(
                 id=contact_id,
                 name=number,
                 phone=number,
@@ -1196,11 +1220,10 @@ def send_message():
                 tags=['Novo Lead'],
                 last_msg=text,
                 last_msg_time=time_str,
-                unread=0,
-                assigned_to=request.user['id'],
-                assigned_name=request.user.get('email')
+                unread=0
             )
-            db_sql.session.add(new_contact)
+            auto_assign_chat_to_sender(contact, request.user)
+            db_sql.session.add(contact)
         
         db_sql.session.flush()
 
@@ -1345,8 +1368,7 @@ def send_audio():
         if not contact:
             contact = Contact(id=contact_id, phone=number, name=f"Novo {number}", instance=inst)
             db_sql.session.add(contact)
-        contact.assigned_to = request.user['id']
-        contact.assigned_name = request.user.get('email')
+        auto_assign_chat_to_sender(contact, request.user)
         db_sql.session.flush()
 
         # Salvar mensagem
@@ -1441,8 +1463,7 @@ def send_image():
         if not contact:
             contact = Contact(id=contact_id, phone=number, name=f"Novo {number}", instance=inst)
             db_sql.session.add(contact)
-        contact.assigned_to = request.user['id']
-        contact.assigned_name = request.user.get('email')
+        auto_assign_chat_to_sender(contact, request.user)
         db_sql.session.flush()
 
         if not Message.query.get(msg_id):
@@ -1531,8 +1552,7 @@ def send_video():
         if not contact:
             contact = Contact(id=contact_id, phone=number, name=f"Novo {number}", instance=inst)
             db_sql.session.add(contact)
-        contact.assigned_to = request.user['id']
-        contact.assigned_name = request.user.get('email')
+        auto_assign_chat_to_sender(contact, request.user)
         db_sql.session.flush()
 
         if not Message.query.get(msg_id):
@@ -1653,8 +1673,7 @@ def send_document():
         if not contact:
             contact = Contact(id=contact_id, phone=number, name=f"Novo {number}", instance=inst)
             db_sql.session.add(contact)
-        contact.assigned_to = request.user['id']
-        contact.assigned_name = request.user.get('email')
+        auto_assign_chat_to_sender(contact, request.user)
         db_sql.session.flush()
 
         if not Message.query.get(msg_id):
@@ -1718,8 +1737,7 @@ def send_location():
         if not contact:
             contact = Contact(id=contact_id, phone=number, name=f"Novo {number}", instance=inst)
             db_sql.session.add(contact)
-        contact.assigned_to = request.user['id']
-        contact.assigned_name = request.user.get('email')
+        auto_assign_chat_to_sender(contact, request.user)
         db_sql.session.flush()
 
         if not Message.query.get(msg_id):
@@ -1805,8 +1823,7 @@ def send_contact():
         if not contact:
             contact = Contact(id=contact_id, phone=number, name=f"Novo {number}", instance=inst)
             db_sql.session.add(contact)
-        contact.assigned_to = request.user['id']
-        contact.assigned_name = request.user.get('email')
+        auto_assign_chat_to_sender(contact, request.user)
         db_sql.session.flush()
 
         if not Message.query.get(msg_id):
