@@ -191,14 +191,42 @@ def extract_waha_msg_id(res_data, fallback):
     return m_id or res_data.get('key', {}).get('id') or res_data.get('messageId') or fallback
 
 def get_media_base64(instance, msg_data):
+    """Busca mídia da WAHA e salva localmente em data/media/. Retorna base64 se conseguir."""
     try:
         msg_id = msg_data.get('id')
         if not msg_id: return None
+        
+        # Verificar se já existe localmente
+        import glob
+        media_dir = os.path.join(DATA_DIR, 'media')
+        short_id = msg_id.split('_')[-1] if '_' in msg_id else msg_id
+        for check_id in [msg_id, short_id]:
+            check_path = os.path.join(media_dir, check_id)
+            matches = glob.glob(check_path + '.*')
+            if os.path.exists(check_path):
+                matches.insert(0, check_path)
+            if matches:
+                with open(matches[0], 'rb') as f:
+                    import base64
+                    return base64.b64encode(f.read()).decode('utf-8')
+        
         url = f"{WAHA_API_URL}/api/files?session=corpal&messageId={msg_id}"
         res = requests.get(url, headers=get_waha_headers(), timeout=15)
         if res.status_code == 200:
             import base64
-            return base64.b64encode(res.content).decode('utf-8')
+            file_bytes = res.content
+            # Salvar localmente para uso futuro
+            try:
+                os.makedirs(media_dir, exist_ok=True)
+                for save_id in set([msg_id, short_id]):
+                    save_path = os.path.join(media_dir, save_id + '.oga')
+                    if not os.path.exists(save_path):
+                        with open(save_path, 'wb') as f:
+                            f.write(file_bytes)
+                print(f"[Media] get_media_base64: salvo localmente para msg_id={msg_id}")
+            except Exception as e_save:
+                print(f"[Media] get_media_base64: erro ao salvar local: {e_save}")
+            return base64.b64encode(file_bytes).decode('utf-8')
     except Exception as e:
         print(f"Erro ao baixar midia base64 (WAHA): {e}")
     return None
@@ -2216,26 +2244,56 @@ def webhook():
                 os.makedirs(media_dir, exist_ok=True)
                 short_id = waha_id.split('_')[-1] if '_' in waha_id else waha_id
                 
-                ext = ''
-                if msg_type == 'image': ext = '.jpeg'
-                elif msg_type in ('audio', 'voice', 'ptt'): ext = '.oga'
-                elif msg_type == 'video': ext = '.mp4'
-                elif msg_type == 'document': ext = '.pdf'
-                
-                filepath = os.path.join(media_dir, f"{short_id}{ext}")
-                
+                # --- Determinar extensão CORRETA baseada no mimetype real ---
                 media_info = payload.get('media', {})
+                media_mimetype = media_info.get('mimetype', '')
                 media_url = media_info.get('url')
                 media_b64 = media_info.get('data')
+                
+                ext = ''
+                if msg_type == 'image':
+                    if 'png' in media_mimetype: ext = '.png'
+                    elif 'webp' in media_mimetype: ext = '.webp'
+                    elif 'gif' in media_mimetype: ext = '.gif'
+                    else: ext = '.jpeg'
+                elif msg_type in ('audio', 'voice', 'ptt'):
+                    ext = '.oga'
+                elif msg_type == 'video':
+                    ext = '.mp4'
+                elif msg_type == 'document':
+                    # Tentar pela extensão do fileName primeiro
+                    doc_filename = payload.get('body', '') or payload.get('_data', {}).get('message', {}).get('documentMessage', {}).get('fileName', '')
+                    if doc_filename:
+                        _, doc_ext = os.path.splitext(doc_filename)
+                        if doc_ext: ext = doc_ext
+                    # Fallback pelo mimetype
+                    if not ext:
+                        import mimetypes as _mt
+                        guessed = _mt.guess_extension(media_mimetype.split(';')[0].strip())
+                        ext = guessed if guessed else '.bin'
+                
+                filepath = os.path.join(media_dir, f"{short_id}{ext}")
+                # Também salvar com o ID completo para que o proxy encontre por ambos
+                filepath_full = os.path.join(media_dir, f"{waha_id}{ext}") if waha_id != short_id else None
+                
+                import glob as _glob
+                # Verificar se JÁ existe com qualquer extensão (evitar re-download)
+                already_exists = False
+                for check_id in set([short_id, waha_id]):
+                    check_path = os.path.join(media_dir, check_id)
+                    if _glob.glob(check_path + '.*') or os.path.exists(check_path):
+                        already_exists = True
+                        break
 
-                # Baixar e salvar o arquivo se ele ainda não existir localmente
-                if not os.path.exists(filepath):
+                if not already_exists:
                     saved_locally = False
+                    file_bytes_saved = None
                     try:
                         if media_b64:
                             import base64
+                            file_bytes_saved = base64.b64decode(media_b64)
                             with open(filepath, 'wb') as f:
-                                f.write(base64.b64decode(media_b64))
+                                f.write(file_bytes_saved)
                             saved_locally = True
                             print(f"[Media] Arquivo {filepath} salvo localmente via Base64 do webhook")
                         elif media_url:
@@ -2247,8 +2305,9 @@ def webhook():
                                 
                             dl_res = requests.get(media_url, headers=get_waha_headers(), timeout=15)
                             if dl_res.status_code == 200:
+                                file_bytes_saved = dl_res.content
                                 with open(filepath, 'wb') as f:
-                                    f.write(dl_res.content)
+                                    f.write(file_bytes_saved)
                                 saved_locally = True
                                 print(f"[Media] Arquivo {filepath} salvo localmente via URL {media_url} do webhook")
                             else:
@@ -2257,7 +2316,7 @@ def webhook():
                         print(f"[Media] Erro ao salvar media via payload: {e}")
                         
                     # Fallback Agressivo: Se falhou ao salvar pela payload, forçar busca via GET /api/files
-                    if not saved_locally and not os.path.exists(filepath):
+                    if not saved_locally:
                         try:
                             waha_url_1 = f"{WAHA_API_URL}/api/files"
                             dl_res = requests.get(waha_url_1, headers=get_waha_headers(), params={'session': session, 'messageId': waha_id}, timeout=15)
@@ -2267,7 +2326,7 @@ def webhook():
                                 dl_res = requests.get(waha_url_1, headers=get_waha_headers(), params={'session': session, 'messageId': short_id}, timeout=15)
                                 
                             if dl_res.status_code == 200:
-                                file_bytes = dl_res.content
+                                file_bytes_saved = dl_res.content
                                 ctype = dl_res.headers.get('Content-Type', '')
                                 if 'application/json' in ctype:
                                     import base64, re
@@ -2276,7 +2335,7 @@ def webhook():
                                         raw = json_data['data']
                                         raw = re.sub(r'[^A-Za-z0-9+/]', '', raw)
                                         raw += "=" * ((4 - len(raw) % 4) % 4)
-                                        file_bytes = base64.b64decode(raw)
+                                        file_bytes_saved = base64.b64decode(raw)
                                     elif 'url' in json_data:
                                         real_url = json_data['url']
                                         if real_url.startswith('http://localhost') or real_url.startswith('http://127.0.0.1'):
@@ -2284,14 +2343,23 @@ def webhook():
                                             real_url = f"{WAHA_API_URL}{urlparse(real_url).path}"
                                         real_res = requests.get(real_url, headers=get_waha_headers(), timeout=15)
                                         if real_res.status_code == 200:
-                                            file_bytes = real_res.content
+                                            file_bytes_saved = real_res.content
                                 with open(filepath, 'wb') as f:
-                                    f.write(file_bytes)
+                                    f.write(file_bytes_saved)
+                                saved_locally = True
                                 print(f"[Media] Arquivo {filepath} salvo via FALLBACK Agressivo (GET /api/files)")
                             else:
                                 print(f"[Media] FALLBACK Agressivo falhou: HTTP {dl_res.status_code}")
                         except Exception as e:
                             print(f"[Media] Erro no FALLBACK Agressivo: {e}")
+                    
+                    # Criar cópia com o ID completo (para o proxy encontrar por ambos os nomes)
+                    if saved_locally and filepath_full and file_bytes_saved:
+                        try:
+                            with open(filepath_full, 'wb') as f:
+                                f.write(file_bytes_saved)
+                        except Exception:
+                            pass  # Não é crítico, o short_id já foi salvo
             # -------------------------------------------------------
 
             # --- Normalizar JID para 12 dígitos ---
@@ -3622,16 +3690,18 @@ def stream_media(media_type):
         # Verificar se o arquivo existe localmente
         media_dir = os.path.join(DATA_DIR, 'media')
         local_path = os.path.join(media_dir, msg_id)
-        short_id = msg_id.split('_')[-1]
+        short_id = msg_id.split('_')[-1] if '_' in msg_id else msg_id
         local_path_short = os.path.join(media_dir, short_id)
         
         import glob
         cache_path = None
         
-        matches = glob.glob(local_path + '.*')
+        # Busca com glob: primeiro pelo ID completo, depois pelo short_id
+        # Usar glob.escape para lidar com caracteres especiais como @
+        matches = glob.glob(glob.escape(local_path) + '.*')
         if os.path.exists(local_path): matches.insert(0, local_path)
         
-        matches_short = glob.glob(local_path_short + '.*')
+        matches_short = glob.glob(glob.escape(local_path_short) + '.*')
         if os.path.exists(local_path_short): matches_short.insert(0, local_path_short)
         
         for p in matches + matches_short:
@@ -3747,11 +3817,16 @@ def stream_media(media_type):
                 if ctype_waha and ctype_waha != 'application/octet-stream':
                     content_type = ctype_waha
                     
-            # Salvar no cache local para acelerar futuras requisições
+            # Salvar no cache local para acelerar futuras requisições (com ambos os IDs)
             try:
                 os.makedirs(media_dir, exist_ok=True)
-                with open(local_path, 'wb') as f:
-                    f.write(file_bytes)
+                # Salvar com short_id (principal) e com o ID completo
+                for save_path in set([local_path_short, local_path]):
+                    try:
+                        with open(save_path, 'wb') as f:
+                            f.write(file_bytes)
+                    except Exception:
+                        pass
             except Exception as e:
                 pass
             
