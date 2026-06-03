@@ -3851,6 +3851,177 @@ def stream_media(media_type):
         print(f"Erro stream_{media_type}: {e}")
         return jsonify({'error': str(e)}), 500
 
+# ─── Admin: Media Browser ────────────────────────────────────────────────────
+
+@app.route('/api/admin/media', methods=['GET'])
+@auth_required
+def admin_list_media():
+    """Lista arquivos na pasta data/media/ com paginação e filtros. Apenas admin."""
+    if request.user.get('role') != 'admin':
+        return jsonify({'error': 'Acesso negado'}), 403
+
+    import glob, mimetypes as _mt
+    media_dir = os.path.join(DATA_DIR, 'media')
+    if not os.path.exists(media_dir):
+        return jsonify({'files': [], 'total': 0, 'total_size': 0, 'page': 1, 'per_page': 50})
+
+    filter_type = request.args.get('type', 'all')  # all, audio, image, video, document
+    page = max(1, int(request.args.get('page', 1)))
+    per_page = min(100, max(10, int(request.args.get('per_page', 50))))
+    search = request.args.get('search', '').strip().lower()
+
+    all_files = []
+    for entry in os.scandir(media_dir):
+        if not entry.is_file():
+            continue
+        name = entry.name
+        stat = entry.stat()
+        _, ext = os.path.splitext(name)
+        ext_lower = ext.lower()
+
+        # Determinar tipo
+        if ext_lower in ('.oga', '.ogg', '.webm', '.opus', '.mp3', '.wav', '.aac', '.m4a'):
+            ftype = 'audio'
+        elif ext_lower in ('.jpeg', '.jpg', '.png', '.webp', '.gif', '.bmp', '.svg'):
+            ftype = 'image'
+        elif ext_lower in ('.mp4', '.avi', '.mov', '.mkv', '.webm_video', '.3gp'):
+            ftype = 'video'
+        elif ext_lower == '.webm':
+            ftype = 'audio'  # webm no contexto do WhatsApp é áudio
+        elif ext_lower in ('', ):
+            # Sem extensão — tentar detectar pelos bytes
+            ftype = 'unknown'
+        else:
+            ftype = 'document'
+
+        if filter_type != 'all' and ftype != filter_type:
+            continue
+        if search and search not in name.lower():
+            continue
+
+        all_files.append({
+            'name': name,
+            'size': stat.st_size,
+            'modified': stat.st_mtime,
+            'type': ftype,
+            'ext': ext_lower or '(sem ext)'
+        })
+
+    # Ordenar por data de modificação (mais recente primeiro)
+    all_files.sort(key=lambda f: f['modified'], reverse=True)
+
+    total = len(all_files)
+    total_size = sum(f['size'] for f in all_files)
+    start = (page - 1) * per_page
+    page_files = all_files[start:start + per_page]
+
+    # Contar por tipo (para stats)
+    type_counts = {}
+    for f in all_files:
+        type_counts[f['type']] = type_counts.get(f['type'], 0) + 1
+
+    return jsonify({
+        'files': page_files,
+        'total': total,
+        'total_size': total_size,
+        'page': page,
+        'per_page': per_page,
+        'total_pages': (total + per_page - 1) // per_page,
+        'type_counts': type_counts
+    })
+
+@app.route('/api/admin/media/serve/<path:filename>')
+@auth_required
+def admin_serve_media(filename):
+    """Serve um arquivo de mídia diretamente. Apenas admin."""
+    if request.user.get('role') != 'admin':
+        return jsonify({'error': 'Acesso negado'}), 403
+
+    import mimetypes as _mt
+    media_dir = os.path.join(DATA_DIR, 'media')
+    filepath = os.path.join(media_dir, filename)
+
+    # Segurança: impedir path traversal
+    if not os.path.abspath(filepath).startswith(os.path.abspath(media_dir)):
+        return jsonify({'error': 'Caminho inválido'}), 400
+
+    if not os.path.exists(filepath):
+        return jsonify({'error': 'Arquivo não encontrado'}), 404
+
+    guess, _ = _mt.guess_type(filepath)
+    content_type = guess or 'application/octet-stream'
+
+    # Detectar áudio por magic bytes se o mimetype não for audio
+    _, ext = os.path.splitext(filename)
+    if ext.lower() in ('.oga', '.ogg', '.opus'):
+        content_type = 'audio/ogg'
+    elif ext.lower() == '.webm':
+        content_type = 'audio/webm'
+
+    with open(filepath, 'rb') as f:
+        data = f.read()
+
+    return Response(data, mimetype=content_type, headers={
+        'Content-Disposition': 'inline',
+        'Cache-Control': 'public, max-age=3600'
+    })
+
+@app.route('/api/admin/media/delete', methods=['POST'])
+@auth_required
+def admin_delete_media():
+    """Deleta arquivos de mídia. Apenas admin."""
+    if request.user.get('role') != 'admin':
+        return jsonify({'error': 'Acesso negado'}), 403
+
+    data = request.json
+    filenames = data.get('filenames', [])
+    if not filenames:
+        return jsonify({'error': 'Nenhum arquivo especificado'}), 400
+
+    media_dir = os.path.join(DATA_DIR, 'media')
+    deleted = 0
+    for fn in filenames:
+        fp = os.path.join(media_dir, fn)
+        if os.path.abspath(fp).startswith(os.path.abspath(media_dir)) and os.path.exists(fp):
+            try:
+                os.remove(fp)
+                deleted += 1
+            except Exception:
+                pass
+
+    return jsonify({'deleted': deleted})
+
+@app.route('/api/admin/media/stats', methods=['GET'])
+@auth_required
+def admin_media_stats():
+    """Retorna estatísticas da pasta de mídia. Apenas admin."""
+    if request.user.get('role') != 'admin':
+        return jsonify({'error': 'Acesso negado'}), 403
+
+    media_dir = os.path.join(DATA_DIR, 'media')
+    if not os.path.exists(media_dir):
+        return jsonify({'total_files': 0, 'total_size': 0, 'types': {}})
+
+    total_files = 0
+    total_size = 0
+    types = {}
+
+    for entry in os.scandir(media_dir):
+        if not entry.is_file():
+            continue
+        stat = entry.stat()
+        total_files += 1
+        total_size += stat.st_size
+        _, ext = os.path.splitext(entry.name)
+        ext = ext.lower() or '(sem ext)'
+        types[ext] = types.get(ext, 0) + 1
+
+    return jsonify({
+        'total_files': total_files,
+        'total_size': total_size,
+        'types': types
+    })
+
 @app.route('/api/debug/test-alerta-espera', methods=['POST'])
 def test_alerta_espera():
     """Rota de teste: simula um cliente esperando ha X minutos.

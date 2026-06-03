@@ -280,6 +280,50 @@
 
         </section>
 
+        <!-- Gerenciador de Mídias -->
+        <section class="admin-section" id="mediaBrowserSection" style="margin-top: 30px;">
+          <div class="section-header" style="display:flex; justify-content:space-between; align-items:center;">
+            <h3>📁 Gerenciador de Mídias Locais</h3>
+            <button class="btn-add-user" onclick="loadMediaFiles()" style="background:#2196F3;">🔄 Atualizar</button>
+          </div>
+
+          <!-- Stats Cards -->
+          <div id="mediaStats" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap:12px; margin-top:15px;">
+          </div>
+
+          <!-- Filters -->
+          <div style="display:flex; gap:10px; margin-top:15px; flex-wrap:wrap; align-items:center;">
+            <select id="mediaTypeFilter" onchange="loadMediaFiles(1)" style="padding:10px 14px; border-radius:8px; background:var(--bg-input); border:1px solid var(--border); color:var(--text-primary); font-size:13px;">
+              <option value="all">📂 Todos</option>
+              <option value="audio">🎤 Áudios</option>
+              <option value="image">🖼️ Imagens</option>
+              <option value="video">🎥 Vídeos</option>
+              <option value="document">📎 Documentos</option>
+            </select>
+            <input type="text" id="mediaSearchInput" placeholder="Buscar por nome do arquivo..." oninput="debounceMediaSearch()"
+              style="flex:1; min-width:200px; padding:10px 14px; border-radius:8px; background:var(--bg-input); border:1px solid var(--border); color:var(--text-primary); font-size:13px;">
+            <button onclick="deleteSelectedMedia()" id="btnDeleteSelected" style="display:none; padding:8px 16px; border:none; border-radius:6px; background:#e74c3c; color:white; font-weight:600; cursor:pointer; font-size:13px;">🗑️ Excluir Selecionados</button>
+          </div>
+
+          <!-- File Grid -->
+          <div id="mediaFileGrid" style="margin-top:15px; display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:12px;">
+            <div style="grid-column: 1/-1; color:var(--text-muted); text-align:center; padding:30px; font-size:13px;">Clique em "Atualizar" para carregar os arquivos de mídia.</div>
+          </div>
+
+          <!-- Pagination -->
+          <div id="mediaPagination" style="display:flex; justify-content:center; gap:8px; margin-top:15px;"></div>
+        </section>
+
+        <!-- Media Preview Modal -->
+        <div id="mediaPreviewModal" class="modal" onclick="if(event.target===this) closeMediaPreview()">
+          <div class="modal-content" style="max-width:700px; max-height:90vh; overflow:auto; position:relative;">
+            <button onclick="closeMediaPreview()" style="position:absolute; top:12px; right:12px; background:none; border:none; color:var(--text-secondary); font-size:22px; cursor:pointer; z-index:10;">&times;</button>
+            <h3 id="mediaPreviewTitle" style="margin-bottom:15px; word-break:break-all; padding-right:30px; font-size:14px;"></h3>
+            <div id="mediaPreviewContent" style="text-align:center;"></div>
+            <div id="mediaPreviewInfo" style="margin-top:15px; font-size:12px; color:var(--text-muted);"></div>
+          </div>
+        </div>
+
         <!-- Botões de Ação -->
         <h1>Gestão de Acessos</h1>
         <p style="color:var(--text-secondary)">Gerencie logins e vincule às instâncias</p>
@@ -440,10 +484,15 @@
         if (n8nCard) n8nCard.style.display = 'none';
         const ferramentasSection = document.getElementById('ferramentasSection');
         if (ferramentasSection) ferramentasSection.style.display = 'none';
+        const mediaBrowserSection = document.getElementById('mediaBrowserSection');
+        if (mediaBrowserSection) mediaBrowserSection.style.display = 'none';
       }
 
       await loadAllInstances();
-      if (currentUserRole === 'admin') await renderWebhooksList();
+      if (currentUserRole === 'admin') {
+        await renderWebhooksList();
+        loadMediaFiles(1);
+      }
       await loadFiliais();
       await loadSetores();
       await loadUsers();
@@ -1031,6 +1080,222 @@
         checkbox.checked = !checkbox.checked;
         alert('Erro de conexão');
       }
+    }
+
+    // ─── Media Browser ────────────────────────────────────────────────────────
+    let mediaCurrentPage = 1;
+    let mediaSelectedFiles = new Set();
+    let _mediaSearchTimer = null;
+
+    function debounceMediaSearch() {
+      clearTimeout(_mediaSearchTimer);
+      _mediaSearchTimer = setTimeout(() => loadMediaFiles(1), 400);
+    }
+
+    function formatFileSize(bytes) {
+      if (bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    function getTypeIcon(type) {
+      switch(type) {
+        case 'audio': return '🎤';
+        case 'image': return '🖼️';
+        case 'video': return '🎥';
+        case 'document': return '📎';
+        default: return '📄';
+      }
+    }
+
+    function getTypeColor(type) {
+      switch(type) {
+        case 'audio': return '#4CAF50';
+        case 'image': return '#2196F3';
+        case 'video': return '#FF9800';
+        case 'document': return '#9C27B0';
+        default: return '#607D8B';
+      }
+    }
+
+    async function loadMediaFiles(page) {
+      if (page) mediaCurrentPage = page;
+      const type = document.getElementById('mediaTypeFilter').value;
+      const search = document.getElementById('mediaSearchInput').value;
+      const grid = document.getElementById('mediaFileGrid');
+      grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:30px; color:var(--text-muted);">Carregando...</div>';
+
+      const params = new URLSearchParams({ type, page: mediaCurrentPage, per_page: 50, search });
+      const data = await apiFetch(`/api/admin/media?${params}`);
+      if (!data) { grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:30px; color:#e74c3c;">Erro ao carregar mídias</div>'; return; }
+
+      // Stats
+      renderMediaStats(data);
+
+      // Clear selection
+      mediaSelectedFiles.clear();
+      updateDeleteBtn();
+
+      if (data.files.length === 0) {
+        grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:40px; color:var(--text-muted); font-size:13px;">Nenhum arquivo encontrado.</div>';
+        document.getElementById('mediaPagination').innerHTML = '';
+        return;
+      }
+
+      grid.innerHTML = '';
+      data.files.forEach(f => {
+        const card = document.createElement('div');
+        card.style.cssText = 'background:var(--bg-input); border:1px solid var(--border); border-radius:12px; padding:14px; cursor:pointer; transition:all 0.2s; position:relative;';
+        card.onmouseenter = () => { card.style.borderColor = getTypeColor(f.type); card.style.transform = 'translateY(-2px)'; };
+        card.onmouseleave = () => { card.style.borderColor = 'var(--border)'; card.style.transform = 'none'; };
+
+        const date = new Date(f.modified * 1000);
+        const dateStr = `${date.getDate().toString().padStart(2,'0')}/${(date.getMonth()+1).toString().padStart(2,'0')}/${date.getFullYear()} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}`;
+
+        card.innerHTML = `
+          <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+            <input type="checkbox" onchange="toggleMediaSelect('${f.name.replace(/'/g, "\\'")}', this)" onclick="event.stopPropagation()" style="width:16px; height:16px; accent-color:var(--green); cursor:pointer;">
+            <div style="width:36px; height:36px; border-radius:8px; background:${getTypeColor(f.type)}22; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0;">
+              ${getTypeIcon(f.type)}
+            </div>
+            <div style="min-width:0; flex:1;">
+              <div style="font-size:12px; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${f.name}">${f.name}</div>
+              <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">${f.ext} · ${formatFileSize(f.size)}</div>
+            </div>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:10px; color:var(--text-muted);">${dateStr}</span>
+            <span style="font-size:10px; padding:3px 8px; border-radius:4px; background:${getTypeColor(f.type)}22; color:${getTypeColor(f.type)}; font-weight:600; text-transform:uppercase;">${f.type}</span>
+          </div>
+        `;
+        card.onclick = (e) => {
+          if (e.target.tagName === 'INPUT') return;
+          openMediaPreview(f);
+        };
+        grid.appendChild(card);
+      });
+
+      // Pagination
+      renderMediaPagination(data.page, data.total_pages, data.total);
+    }
+
+    function renderMediaStats(data) {
+      const container = document.getElementById('mediaStats');
+      const counts = data.type_counts || {};
+      const statItems = [
+        { label: 'Total', value: data.total, icon: '📂', color: '#607D8B', size: formatFileSize(data.total_size) },
+        { label: 'Áudios', value: counts.audio || 0, icon: '🎤', color: '#4CAF50' },
+        { label: 'Imagens', value: counts.image || 0, icon: '🖼️', color: '#2196F3' },
+        { label: 'Vídeos', value: counts.video || 0, icon: '🎥', color: '#FF9800' },
+        { label: 'Documentos', value: counts.document || 0, icon: '📎', color: '#9C27B0' },
+      ];
+      container.innerHTML = statItems.map(s => `
+        <div style="background:var(--bg-input); border:1px solid var(--border); border-radius:10px; padding:14px; text-align:center;">
+          <div style="font-size:22px; margin-bottom:4px;">${s.icon}</div>
+          <div style="font-size:20px; font-weight:700; color:${s.color};">${s.value}</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">${s.label}</div>
+          ${s.size ? `<div style="font-size:10px; color:var(--text-muted);">${s.size}</div>` : ''}
+        </div>
+      `).join('');
+    }
+
+    function renderMediaPagination(current, totalPages, totalItems) {
+      const container = document.getElementById('mediaPagination');
+      if (totalPages <= 1) { container.innerHTML = ''; return; }
+
+      let html = '';
+      const btnStyle = (active) => `padding:6px 12px; border:1px solid var(--border); border-radius:6px; cursor:pointer; font-size:12px; ${active ? 'background:var(--green); color:white; font-weight:600; border-color:var(--green);' : 'background:var(--bg-input); color:var(--text-secondary);'}`;
+
+      if (current > 1) html += `<button style="${btnStyle(false)}" onclick="loadMediaFiles(${current-1})">‹ Ant</button>`;
+      
+      const start = Math.max(1, current - 2);
+      const end = Math.min(totalPages, current + 2);
+      for (let i = start; i <= end; i++) {
+        html += `<button style="${btnStyle(i===current)}" onclick="loadMediaFiles(${i})">${i}</button>`;
+      }
+      
+      if (current < totalPages) html += `<button style="${btnStyle(false)}" onclick="loadMediaFiles(${current+1})">Próx ›</button>`;
+      html += `<span style="color:var(--text-muted); font-size:11px; align-self:center; margin-left:8px;">${totalItems} arquivos</span>`;
+
+      container.innerHTML = html;
+    }
+
+    function toggleMediaSelect(filename, checkbox) {
+      if (checkbox.checked) mediaSelectedFiles.add(filename);
+      else mediaSelectedFiles.delete(filename);
+      updateDeleteBtn();
+    }
+
+    function updateDeleteBtn() {
+      const btn = document.getElementById('btnDeleteSelected');
+      if (mediaSelectedFiles.size > 0) {
+        btn.style.display = 'inline-block';
+        btn.textContent = `🗑️ Excluir ${mediaSelectedFiles.size} Selecionado(s)`;
+      } else {
+        btn.style.display = 'none';
+      }
+    }
+
+    async function deleteSelectedMedia() {
+      if (mediaSelectedFiles.size === 0) return;
+      if (!confirm(`Tem certeza que deseja excluir ${mediaSelectedFiles.size} arquivo(s)? Esta ação é irreversível!`)) return;
+
+      const res = await apiFetch('/api/admin/media/delete', 'POST', { filenames: Array.from(mediaSelectedFiles) });
+      if (res) {
+        alert(`${res.deleted} arquivo(s) excluído(s) com sucesso.`);
+        loadMediaFiles(mediaCurrentPage);
+      }
+    }
+
+    function openMediaPreview(file) {
+      const modal = document.getElementById('mediaPreviewModal');
+      const title = document.getElementById('mediaPreviewTitle');
+      const content = document.getElementById('mediaPreviewContent');
+      const info = document.getElementById('mediaPreviewInfo');
+      const token = localStorage.getItem('wp_crm_token');
+      const url = `${API_URL}/api/admin/media/serve/${encodeURIComponent(file.name)}?token=${token}`;
+
+      title.textContent = file.name;
+      const date = new Date(file.modified * 1000);
+      info.innerHTML = `<strong>Tipo:</strong> ${file.type.toUpperCase()} · <strong>Tamanho:</strong> ${formatFileSize(file.size)} · <strong>Extensão:</strong> ${file.ext} · <strong>Data:</strong> ${date.toLocaleString('pt-BR')}`;
+
+      if (file.type === 'audio') {
+        content.innerHTML = `
+          <div style="padding:30px 0;">
+            <div style="font-size:60px; margin-bottom:15px;">🎤</div>
+            <audio controls preload="auto" style="width:100%; max-width:400px;" src="${url}">
+              Seu navegador não suporta áudio.
+            </audio>
+          </div>`;
+      } else if (file.type === 'image') {
+        content.innerHTML = `<img src="${url}" style="max-width:100%; max-height:60vh; border-radius:8px; object-fit:contain;" onerror="this.outerHTML='<div style=\\'padding:30px; color:#e74c3c;\\'>Erro ao carregar imagem</div>'">`;
+      } else if (file.type === 'video') {
+        content.innerHTML = `
+          <video controls preload="auto" style="max-width:100%; max-height:60vh; border-radius:8px;" src="${url}">
+            Seu navegador não suporta vídeo.
+          </video>`;
+      } else {
+        content.innerHTML = `
+          <div style="padding:40px 0;">
+            <div style="font-size:60px; margin-bottom:15px;">📎</div>
+            <p style="color:var(--text-secondary); margin-bottom:15px;">Preview não disponível para este tipo de arquivo.</p>
+            <a href="${url}" target="_blank" download="${file.name}" style="display:inline-block; padding:10px 20px; background:var(--green); color:white; border-radius:8px; text-decoration:none; font-weight:600;">⬇️ Baixar Arquivo</a>
+          </div>`;
+      }
+
+      modal.style.display = 'flex';
+    }
+
+    function closeMediaPreview() {
+      const modal = document.getElementById('mediaPreviewModal');
+      // Parar reprodução
+      const audio = modal.querySelector('audio');
+      const video = modal.querySelector('video');
+      if (audio) audio.pause();
+      if (video) video.pause();
+      modal.style.display = 'none';
     }
   </script>
 </body>
