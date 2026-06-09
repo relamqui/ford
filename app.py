@@ -4287,8 +4287,10 @@ def serve_frontend(path):
         return send_from_directory(ROOT_DIR, 'entregador.html') if path == 'entregador' else send_from_directory(ROOT_DIR, path)
     if path.startswith('css/') or path.startswith('js/') or path.startswith('img/'):
         return send_from_directory(ROOT_DIR, path)
-    if path in ('manifest.json', 'sw.js'):
-        return send_from_directory(ROOT_DIR, path)
+    if path == 'manifest.json':
+        return send_from_directory(ROOT_DIR, path, mimetype='application/manifest+json')
+    if path == 'sw.js':
+        return send_from_directory(ROOT_DIR, path, mimetype='application/javascript')
     if path.lower().endswith(('.png', '.jpg', '.jpeg', '.svg', '.ico', '.webp')):
         return send_from_directory(ROOT_DIR, path)
     return jsonify({'error': 'Not found'}), 404
