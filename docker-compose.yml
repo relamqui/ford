@@ -7,14 +7,14 @@ services:
     ports:
       - "5438:5432"
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-wpcrm}
+      POSTGRES_DB: ${POSTGRES_DB:-presidente}
       POSTGRES_USER: ${POSTGRES_USER:-wpcrm_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-wpcrm_pass_secure}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wpcrm_user} -d ${POSTGRES_DB:-wpcrm}" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-wpcrm_user} -d ${POSTGRES_DB:-presidente}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -22,13 +22,13 @@ services:
   wpcrm:
     build: .
     ports:
-      - "${APP_PORT:-3008}:3008"
+      - "${APP_PORT:-9010}:9010"
     depends_on:
       database:
         condition: service_healthy
     environment:
-      - PORT=3008
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-wpcrm_user}:${POSTGRES_PASSWORD:-wpcrm_pass_secure}@database:5432/${POSTGRES_DB:-wpcrm}
+      - PORT=9010
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-wpcrm_user}:${POSTGRES_PASSWORD:-wpcrm_pass_secure}@database:5432/${POSTGRES_DB:-presidente}
       - JWT_SECRET=${JWT_SECRET}
       - WAHA_API_URL=${WAHA_API_URL}
       - WAHA_API_KEY=${WAHA_API_KEY}
