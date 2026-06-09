@@ -506,6 +506,31 @@ def get_entregas():
         'criado_em': e.criado_em.isoformat() if e.criado_em else None
     } for e in entregas])
 
+@app.route('/api/entregador/entregas/disponiveis', methods=['GET'])
+@auth_required
+def get_entregas_disponiveis():
+    if request.user.get('role') not in ('entregador', 'admin'):
+        return jsonify({'error': 'Acesso negado. Apenas entregadores.'}), 403
+        
+    # Retorna entregas com status "Pronto para coleta"
+    entregas = Entrega.query.filter_by(status='Pronto para coleta').order_by(Entrega.id.desc()).all()
+    return jsonify([{
+        'id': e.id,
+        'nome_peca': e.nome_peca,
+        'tamanho_peca': e.tamanho_peca,
+        'nome_cliente': e.nome_cliente,
+        'localizacao': e.localizacao,
+        'telefone_cliente': e.telefone_cliente,
+        'pago': e.pago,
+        'forma_pagamento': e.forma_pagamento,
+        'valor': e.valor,
+        'status': e.status,
+        'nome_atendente': e.nome_atendente,
+        'latitude': e.latitude,
+        'longitude': e.longitude,
+        'criado_em': e.criado_em.isoformat() if e.criado_em else None
+    } for e in entregas])
+
 @app.route('/api/entregas', methods=['POST'])
 @auth_required
 def create_entrega():
@@ -4258,9 +4283,11 @@ def index_page():
 
 @app.route('/<path:path>')
 def serve_frontend(path):
-    if path in ('index.html', 'dashboard.html', 'admin.html', 'reports.html'):
+    if path in ('index.html', 'dashboard.html', 'admin.html', 'reports.html', 'entregador', 'entregador.html'):
+        return send_from_directory(ROOT_DIR, 'entregador.html') if path == 'entregador' else send_from_directory(ROOT_DIR, path)
+    if path.startswith('css/') or path.startswith('js/') or path.startswith('img/'):
         return send_from_directory(ROOT_DIR, path)
-    if path.startswith('css/') or path.startswith('js/'):
+    if path in ('manifest.json', 'sw.js'):
         return send_from_directory(ROOT_DIR, path)
     if path.lower().endswith(('.png', '.jpg', '.jpeg', '.svg', '.ico', '.webp')):
         return send_from_directory(ROOT_DIR, path)
