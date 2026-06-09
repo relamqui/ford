@@ -577,8 +577,10 @@ def push_test():
     from pywebpush import webpush, WebPushException
     
     subs = PushSubscription.query.all()
-    # Pega a chave privada, se não estiver na var de ambiente tenta usar o arquivo
-    vapid_private_key = os.environ.get('VAPID_PRIVATE_KEY', 'private_key.pem')
+    # Pega a chave privada, tenta caminho absoluto para não dar erro
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    default_key_path = os.path.join(base_dir, 'private_key.pem')
+    vapid_private_key = os.environ.get('VAPID_PRIVATE_KEY', default_key_path)
     vapid_claims = {"sub": "mailto:admin@example.com"}
     
     success_count = 0
@@ -598,10 +600,10 @@ def push_test():
                 vapid_claims=vapid_claims
             )
             success_count += 1
-        except WebPushException as ex:
+        except Exception as ex:
             print("WebPush Error:", repr(ex))
-            # Se o endpoint não for mais válido, removemos
-            if ex.response is not None and getattr(ex.response, 'status_code', 500) in [404, 410]:
+            # Se for erro do webpush (WebPushException), podemos verificar a resposta
+            if hasattr(ex, 'response') and ex.response is not None and getattr(ex.response, 'status_code', 500) in [404, 410]:
                 db_sql.session.delete(sub)
                 
     db_sql.session.commit()
