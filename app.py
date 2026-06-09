@@ -581,7 +581,7 @@ def push_test():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     default_key_path = os.path.join(base_dir, 'private_key.pem')
     vapid_private_key = os.environ.get('VAPID_PRIVATE_KEY', default_key_path)
-    vapid_claims = {"sub": "mailto:admin@example.com"}
+    vapid_claims = {"sub": "mailto:contato@snykia.com"}
     
     success_count = 0
     errors = []
