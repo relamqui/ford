@@ -141,27 +141,27 @@
   <!-- =====================
        PAINEL DE ENTREGAS
   ======================== -->
-  <section class="panel-entregas" id="panelEntregas" style="display:none; flex: 1; flex-direction: column; background: var(--bg-default); height: 100%;">
-    <div class="panel-header" style="border-bottom: 1px solid var(--border); padding: 15px 20px;">
+  <section class="panel-entregas" id="panelEntregas" style="display:none;">
+    <div class="panel-header border-bottom">
       <h2>Gestor de Entregas</h2>
       <div class="panel-actions">
-        <button class="icon-btn" title="Nova Entrega" onclick="openNovaEntregaModal()" style="width: auto; padding: 0 15px; background: #00a884; color: white; border-radius: 8px;">
+        <button class="btn-nova-entrega" onclick="openNovaEntregaModal()">
           + Nova Entrega
         </button>
       </div>
     </div>
-    <div style="padding: 20px; flex: 1; overflow-y: auto;">
-      <table id="tabelaEntregas" style="width: 100%; border-collapse: collapse; text-align: left; color: #e9edef;">
+    <div class="tabela-entregas-container">
+      <table id="tabelaEntregas" class="wpcrm-table">
         <thead>
-          <tr style="border-bottom: 1px solid #3b4a54;">
-            <th style="padding: 12px;">ID</th>
-            <th style="padding: 12px;">Cliente</th>
-            <th style="padding: 12px;">Telefone</th>
-            <th style="padding: 12px;">Peça / Tamanho</th>
-            <th style="padding: 12px;">Localização</th>
-            <th style="padding: 12px;">Pagamento</th>
-            <th style="padding: 12px;">Status</th>
-            <th style="padding: 12px;">Ações</th>
+          <tr>
+            <th>ID</th>
+            <th>Cliente</th>
+            <th>Telefone</th>
+            <th>Peça / Tamanho</th>
+            <th>Localização</th>
+            <th>Pagamento</th>
+            <th>Status</th>
+            <th>Ações</th>
           </tr>
         </thead>
         <tbody id="listaEntregasBody">

@@ -660,26 +660,25 @@ function renderEntregas(entregas) {
   const options = ['Pendente', 'Saiu para entrega', 'Entregue', 'Cancelado'];
 
   entregas.forEach(e => {
-    let selectStatus = `<select onchange="updateEntregaStatus(${e.id}, this.value)" style="background:#2a3942;border:1px solid #3b4a54;border-radius:4px;color:white;padding:4px 8px;outline:none;">`;
+    let selectStatus = `<select onchange="updateEntregaStatus(${e.id}, this.value)">`;
     options.forEach(opt => {
       selectStatus += `<option value="${opt}" ${e.status === opt ? 'selected' : ''}>${opt}</option>`;
     });
     selectStatus += `</select>`;
 
-    let pagInfo = e.pago ? '<span class="tag-green" style="padding:2px 6px;border-radius:4px;font-size:11px;">Pago</span>' : `<span class="tag-orange" style="padding:2px 6px;border-radius:4px;font-size:11px;">A Pagar</span><div style="font-size:11px;margin-top:4px;">${e.forma_pagamento || '-'} | R$ ${e.valor || '0.00'}</div>`;
+    let pagInfo = e.pago ? '<span class="tag-green" style="padding:4px 8px;border-radius:4px;font-size:11px;">Pago</span>' : `<span class="tag-orange" style="padding:4px 8px;border-radius:4px;font-size:11px;">A Pagar</span><div style="font-size:11px;margin-top:6px;color:var(--text-secondary)">${e.forma_pagamento || '-'} <br> R$ ${e.valor || '0.00'}</div>`;
 
     const tr = document.createElement('tr');
-    tr.style.borderBottom = "1px solid #2a3942";
     tr.innerHTML = `
-      <td style="padding: 12px; vertical-align: top;">#${e.id}</td>
-      <td style="padding: 12px; vertical-align: top;">${escapeHtml(e.nome_cliente)}</td>
-      <td style="padding: 12px; vertical-align: top;">${escapeHtml(e.telefone_cliente || '-')}</td>
-      <td style="padding: 12px; vertical-align: top;"><strong>${escapeHtml(e.nome_peca)}</strong><br><span style="font-size:12px;color:#8696a0;">Tamanho: ${escapeHtml(e.tamanho_peca || '-')}</span></td>
-      <td style="padding: 12px; vertical-align: top;">${escapeHtml(e.localizacao)}</td>
-      <td style="padding: 12px; vertical-align: top;">${pagInfo}</td>
-      <td style="padding: 12px; vertical-align: top;">${selectStatus}</td>
-      <td style="padding: 12px; vertical-align: top;">
-        <button class="icon-btn" title="Editar (Em breve)" style="color:#00a884;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></button>
+      <td>#${e.id}</td>
+      <td><strong>${escapeHtml(e.nome_cliente)}</strong></td>
+      <td>${escapeHtml(e.telefone_cliente || '-')}</td>
+      <td><strong>${escapeHtml(e.nome_peca)}</strong><br><span style="font-size:12px;color:var(--text-secondary);margin-top:4px;display:inline-block;">Tam: ${escapeHtml(e.tamanho_peca || '-')}</span></td>
+      <td>${escapeHtml(e.localizacao)}</td>
+      <td>${pagInfo}</td>
+      <td>${selectStatus}</td>
+      <td>
+        <button class="icon-btn" title="Editar (Em breve)" style="color:var(--green);"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></button>
       </td>
     `;
     tbody.appendChild(tr);
