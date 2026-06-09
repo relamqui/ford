@@ -782,7 +782,7 @@ def create_user():
     if s_obj: setor_name = s_obj.name
     # Auto-preencher instances quando for gestor, baseado na filial
     auto_instances = []
-    role = data.get('role', 'user') if data.get('role') in ('user', 'gestor') else 'user'
+    role = data.get('role', 'user') if data.get('role') in ('user', 'gestor', 'entregador') else 'user'
     if role == 'gestor' and f_obj and f_obj.instance:
         auto_instances = [f_obj.instance]
     
@@ -844,9 +844,9 @@ def manage_user(user_id):
         if data.get('setor'):
             user.setor = data.get('setor')
         
-        # Permite atualizar role (apenas user ou gestor, nunca admin)
+        # Permite atualizar role (apenas user, gestor, entregador, nunca admin)
         new_role = data.get('role')
-        if new_role in ('user', 'gestor'):
+        if new_role in ('user', 'gestor', 'entregador'):
             user.role = new_role
             
         db_sql.session.commit()
