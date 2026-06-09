@@ -2,12 +2,46 @@ const API_URL = window.location.origin;
 
 let entregas = [];
 let currentEntrega = null;
+let deferredInstallPrompt = null;
 
 // Service Worker Registration
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(err => {
     console.error('Service Worker registration failed:', err);
   });
+}
+
+// Capture Android install prompt
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  showInstallButton();
+});
+
+// When app is installed, hide the button
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  hideInstallButton();
+});
+
+function showInstallButton() {
+  const btn = document.getElementById('installBanner');
+  if (btn) btn.style.display = 'flex';
+}
+
+function hideInstallButton() {
+  const btn = document.getElementById('installBanner');
+  if (btn) btn.style.display = 'none';
+}
+
+async function installApp() {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  const { outcome } = await deferredInstallPrompt.userChoice;
+  if (outcome === 'accepted') {
+    deferredInstallPrompt = null;
+    hideInstallButton();
+  }
 }
 
 // Initialization
@@ -18,6 +52,14 @@ document.addEventListener('DOMContentLoaded', () => {
     loadEntregas();
   } else {
     showScreen('loginScreen');
+  }
+
+  // iOS detection - show tip since Safari doesn't support beforeinstallprompt
+  const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches;
+  const iosTip = document.getElementById('iosTip');
+  if (isIos && !isInStandaloneMode && iosTip) {
+    iosTip.style.display = 'flex';
   }
 });
 
