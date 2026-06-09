@@ -1,3 +1,12 @@
+# Auto-detectar modo async: eventlet em produção (Docker/Python 3.11),
+# threading em desenvolvimento local (Python 3.12+ onde eventlet falha)
+_async_mode = 'threading'
+try:
+    import eventlet
+    eventlet.monkey_patch()
+    _async_mode = 'eventlet'
+except Exception:
+    pass
 
 import os
 import jwt
@@ -39,16 +48,6 @@ log.setLevel(logging.ERROR)
 
 app = Flask(__name__)
 CORS(app)
-
-# Auto-detectar modo async: eventlet em produção (Docker/Python 3.11),
-# threading em desenvolvimento local (Python 3.12+ onde eventlet falha)
-_async_mode = 'threading'
-try:
-    import eventlet
-    eventlet.monkey_patch()
-    _async_mode = 'eventlet'
-except Exception:
-    pass
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode=_async_mode)
 print(f"[INIT] SocketIO async_mode={_async_mode}")
