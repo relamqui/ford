@@ -77,6 +77,9 @@
       <button class="nav-btn" id="navReports" onclick="location.href='reports.html'" title="Relatórios SLA" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
       </button>
+      <button class="nav-btn" id="navEntregas" onclick="setView('entregas')" title="Gestor de Entregas">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+      </button>
       <button class="nav-btn" id="navSettings" onclick="setView('settings')" title="Configurações">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
       </button>
@@ -132,6 +135,39 @@
     <!-- Lista de chats -->
     <div class="chat-list" id="chatList">
       <!-- Items injetados via JS -->
+    </div>
+  </section>
+
+  <!-- =====================
+       PAINEL DE ENTREGAS
+  ======================== -->
+  <section class="panel-entregas" id="panelEntregas" style="display:none; flex: 1; flex-direction: column; background: var(--bg-default); height: 100%;">
+    <div class="panel-header" style="border-bottom: 1px solid var(--border); padding: 15px 20px;">
+      <h2>Gestor de Entregas</h2>
+      <div class="panel-actions">
+        <button class="icon-btn" title="Nova Entrega" onclick="openNovaEntregaModal()" style="width: auto; padding: 0 15px; background: #00a884; color: white; border-radius: 8px;">
+          + Nova Entrega
+        </button>
+      </div>
+    </div>
+    <div style="padding: 20px; flex: 1; overflow-y: auto;">
+      <table id="tabelaEntregas" style="width: 100%; border-collapse: collapse; text-align: left; color: #e9edef;">
+        <thead>
+          <tr style="border-bottom: 1px solid #3b4a54;">
+            <th style="padding: 12px;">ID</th>
+            <th style="padding: 12px;">Cliente</th>
+            <th style="padding: 12px;">Telefone</th>
+            <th style="padding: 12px;">Peça / Tamanho</th>
+            <th style="padding: 12px;">Localização</th>
+            <th style="padding: 12px;">Pagamento</th>
+            <th style="padding: 12px;">Status</th>
+            <th style="padding: 12px;">Ações</th>
+          </tr>
+        </thead>
+        <tbody id="listaEntregasBody">
+          <!-- Injetado dinamicamente via JS -->
+        </tbody>
+      </table>
     </div>
   </section>
 
@@ -301,6 +337,76 @@
       </div>
     </div>
   </aside>
+</div>
+
+
+<!-- Modal Nova Entrega -->
+<div class="modal-overlay" id="novaEntregaModal" style="display:none" onclick="closeNovaEntregaModal()">
+  <div class="modal-box" style="width: 500px;" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3>Criar Nova Entrega</h3>
+      <button class="icon-btn" onclick="closeNovaEntregaModal()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div style="padding: 20px; max-height: 70vh; overflow-y: auto;">
+      <div style="margin-bottom: 15px;">
+        <label style="display:block;margin-bottom:5px;font-size:12px;color:var(--text-muted)">Nome do Cliente *</label>
+        <input type="text" id="entregaNomeCliente" placeholder="Ex: João da Silva" style="width:100%;padding:10px;background:#2a3942;border:1px solid #3b4a54;border-radius:8px;color:white;outline:none;">
+      </div>
+      <div style="margin-bottom: 15px;">
+        <label style="display:block;margin-bottom:5px;font-size:12px;color:var(--text-muted)">Telefone do Cliente</label>
+        <input type="text" id="entregaTelefone" placeholder="Ex: 553599999999" style="width:100%;padding:10px;background:#2a3942;border:1px solid #3b4a54;border-radius:8px;color:white;outline:none;">
+      </div>
+      <div style="margin-bottom: 15px; display: flex; gap: 10px;">
+        <div style="flex: 2;">
+          <label style="display:block;margin-bottom:5px;font-size:12px;color:var(--text-muted)">Nome da Peça *</label>
+          <input type="text" id="entregaNomePeca" placeholder="Ex: Cadeira" style="width:100%;padding:10px;background:#2a3942;border:1px solid #3b4a54;border-radius:8px;color:white;outline:none;">
+        </div>
+        <div style="flex: 1;">
+          <label style="display:block;margin-bottom:5px;font-size:12px;color:var(--text-muted)">Tamanho</label>
+          <input type="text" id="entregaTamanhoPeca" placeholder="Ex: M" style="width:100%;padding:10px;background:#2a3942;border:1px solid #3b4a54;border-radius:8px;color:white;outline:none;">
+        </div>
+      </div>
+      <div style="margin-bottom: 15px;">
+        <label style="display:block;margin-bottom:5px;font-size:12px;color:var(--text-muted)">Localização *</label>
+        <input type="text" id="entregaLocalizacao" placeholder="Ex: Rua X, 123" style="width:100%;padding:10px;background:#2a3942;border:1px solid #3b4a54;border-radius:8px;color:white;outline:none;">
+      </div>
+      <div style="margin-bottom: 15px; padding: 10px; background: rgba(0,0,0,0.2); border-radius: 8px;">
+        <label style="display:flex;align-items:center;cursor:pointer;">
+          <input type="checkbox" id="entregaPago" onchange="togglePagamentoFields()" style="margin-right: 10px; width: 16px; height: 16px;">
+          <span style="font-size:14px;color:#e9edef">Pedido já está pago?</span>
+        </label>
+      </div>
+      <div id="dadosPagamento" style="display: block; margin-bottom: 15px;">
+        <div style="display: flex; gap: 10px;">
+          <div style="flex: 1;">
+            <label style="display:block;margin-bottom:5px;font-size:12px;color:var(--text-muted)">Forma de Pagamento</label>
+            <select id="entregaFormaPagamento" style="width:100%;padding:10px;background:#2a3942;border:1px solid #3b4a54;border-radius:8px;color:white;outline:none;">
+              <option value="">Selecione...</option>
+              <option value="Pix">Pix</option>
+              <option value="Cartão">Cartão</option>
+              <option value="Dinheiro">Dinheiro</option>
+            </select>
+          </div>
+          <div style="flex: 1;">
+            <label style="display:block;margin-bottom:5px;font-size:12px;color:var(--text-muted)">Valor (R$)</label>
+            <input type="text" id="entregaValor" placeholder="Ex: 150.00" style="width:100%;padding:10px;background:#2a3942;border:1px solid #3b4a54;border-radius:8px;color:white;outline:none;">
+          </div>
+        </div>
+      </div>
+      <div style="margin-bottom: 15px;">
+        <label style="display:block;margin-bottom:5px;font-size:12px;color:var(--text-muted)">Status Inicial</label>
+        <select id="entregaStatus" style="width:100%;padding:10px;background:#2a3942;border:1px solid #3b4a54;border-radius:8px;color:white;outline:none;">
+          <option value="Pendente">Pendente</option>
+          <option value="Saiu para entrega">Saiu para entrega</option>
+          <option value="Entregue">Entregue</option>
+          <option value="Cancelado">Cancelado</option>
+        </select>
+      </div>
+      <button class="btn-save-notes" style="width:100%; background: #00a884; color: white; padding: 12px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;" onclick="submitNovaEntrega()">Salvar Entrega</button>
+    </div>
+  </div>
 </div>
 
 

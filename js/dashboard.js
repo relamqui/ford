@@ -517,16 +517,195 @@ function setView(view) {
 
   // Update active nav button
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById('nav' + capitalize(view))?.classList.add('active');
+  const btn = document.getElementById('nav' + capitalize(view));
+  if (btn) btn.classList.add('active');
 
   if (view === 'instances') {
     openInstancesModal();
+    return;
+  }
+  
+  if (view === 'entregas') {
+    document.getElementById('panelList').style.display = 'none';
+    document.getElementById('chatArea').style.display = 'none';
+    document.getElementById('sidebarDetails').style.display = 'none';
+    
+    const panelEntregas = document.getElementById('panelEntregas');
+    if (panelEntregas) {
+      panelEntregas.style.display = 'flex';
+      loadEntregas();
+    }
   } else {
+    document.getElementById('panelList').style.display = 'flex';
+    document.getElementById('chatArea').style.display = 'flex';
+    if (currentChat) {
+      document.getElementById('sidebarDetails').style.display = 'flex';
+    }
+    
+    const panelEntregas = document.getElementById('panelEntregas');
+    if (panelEntregas) {
+      panelEntregas.style.display = 'none';
+    }
+    
     document.getElementById('panelTitle').textContent = {
       chats: 'Conversas', contacts: 'Contatos', settings: 'Configurações'
     }[view] || 'Conversas';
   }
 }
+
+// ─── Lógica do Gestor de Entregas ─────────────────────────────────────────────
+
+function openNovaEntregaModal() {
+  document.getElementById('novaEntregaModal').style.display = 'flex';
+  document.getElementById('entregaNomeCliente').value = '';
+  document.getElementById('entregaTelefone').value = '';
+  document.getElementById('entregaNomePeca').value = '';
+  document.getElementById('entregaTamanhoPeca').value = '';
+  document.getElementById('entregaLocalizacao').value = '';
+  document.getElementById('entregaPago').checked = false;
+  document.getElementById('entregaFormaPagamento').value = '';
+  document.getElementById('entregaValor').value = '';
+  document.getElementById('entregaStatus').value = 'Pendente';
+  togglePagamentoFields();
+}
+
+function closeNovaEntregaModal() {
+  document.getElementById('novaEntregaModal').style.display = 'none';
+}
+
+function togglePagamentoFields() {
+  const isPago = document.getElementById('entregaPago').checked;
+  const divPagamento = document.getElementById('dadosPagamento');
+  if (isPago) {
+    divPagamento.style.display = 'none';
+  } else {
+    divPagamento.style.display = 'block';
+  }
+}
+
+async function submitNovaEntrega() {
+  const token = localStorage.getItem('wp_crm_token');
+  const nomeCliente = document.getElementById('entregaNomeCliente').value.trim();
+  const telefone = document.getElementById('entregaTelefone').value.trim();
+  const nomePeca = document.getElementById('entregaNomePeca').value.trim();
+  const tamanhoPeca = document.getElementById('entregaTamanhoPeca').value.trim();
+  const localizacao = document.getElementById('entregaLocalizacao').value.trim();
+  const isPago = document.getElementById('entregaPago').checked;
+  const formaPagamento = document.getElementById('entregaFormaPagamento').value;
+  const valor = document.getElementById('entregaValor').value.trim();
+  const status = document.getElementById('entregaStatus').value;
+
+  if (!nomeCliente || !nomePeca || !localizacao) {
+    alert('Preencha os campos obrigatórios (Nome do Cliente, Nome da Peça, Localização).');
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_URL}/api/entregas`, {
+      method: 'POST',
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        nome_cliente: nomeCliente,
+        telefone_cliente: telefone,
+        nome_peca: nomePeca,
+        tamanho_peca: tamanhoPeca,
+        localizacao: localizacao,
+        pago: isPago,
+        forma_pagamento: isPago ? null : formaPagamento,
+        valor: isPago ? null : valor,
+        status: status
+      })
+    });
+
+    if (res.ok) {
+      closeNovaEntregaModal();
+      loadEntregas();
+    } else {
+      const err = await res.json();
+      alert('Erro ao salvar entrega: ' + (err.error || 'Desconhecido'));
+    }
+  } catch (e) {
+    console.error('Erro ao salvar entrega:', e);
+  }
+}
+
+async function loadEntregas() {
+  const token = localStorage.getItem('wp_crm_token');
+  try {
+    const res = await fetch(`${API_URL}/api/entregas`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+      const entregas = await res.json();
+      renderEntregas(entregas);
+    }
+  } catch (e) {
+    console.error('Erro ao carregar entregas:', e);
+  }
+}
+
+function renderEntregas(entregas) {
+  const tbody = document.getElementById('listaEntregasBody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  
+  if (entregas.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:20px; color:#8696a0;">Nenhuma entrega encontrada.</td></tr>`;
+    return;
+  }
+
+  const options = ['Pendente', 'Saiu para entrega', 'Entregue', 'Cancelado'];
+
+  entregas.forEach(e => {
+    let selectStatus = `<select onchange="updateEntregaStatus(${e.id}, this.value)" style="background:#2a3942;border:1px solid #3b4a54;border-radius:4px;color:white;padding:4px 8px;outline:none;">`;
+    options.forEach(opt => {
+      selectStatus += `<option value="${opt}" ${e.status === opt ? 'selected' : ''}>${opt}</option>`;
+    });
+    selectStatus += `</select>`;
+
+    let pagInfo = e.pago ? '<span class="tag-green" style="padding:2px 6px;border-radius:4px;font-size:11px;">Pago</span>' : `<span class="tag-orange" style="padding:2px 6px;border-radius:4px;font-size:11px;">A Pagar</span><div style="font-size:11px;margin-top:4px;">${e.forma_pagamento || '-'} | R$ ${e.valor || '0.00'}</div>`;
+
+    const tr = document.createElement('tr');
+    tr.style.borderBottom = "1px solid #2a3942";
+    tr.innerHTML = `
+      <td style="padding: 12px; vertical-align: top;">#${e.id}</td>
+      <td style="padding: 12px; vertical-align: top;">${escapeHtml(e.nome_cliente)}</td>
+      <td style="padding: 12px; vertical-align: top;">${escapeHtml(e.telefone_cliente || '-')}</td>
+      <td style="padding: 12px; vertical-align: top;"><strong>${escapeHtml(e.nome_peca)}</strong><br><span style="font-size:12px;color:#8696a0;">Tamanho: ${escapeHtml(e.tamanho_peca || '-')}</span></td>
+      <td style="padding: 12px; vertical-align: top;">${escapeHtml(e.localizacao)}</td>
+      <td style="padding: 12px; vertical-align: top;">${pagInfo}</td>
+      <td style="padding: 12px; vertical-align: top;">${selectStatus}</td>
+      <td style="padding: 12px; vertical-align: top;">
+        <button class="icon-btn" title="Editar (Em breve)" style="color:#00a884;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+async function updateEntregaStatus(id, novoStatus) {
+  const token = localStorage.getItem('wp_crm_token');
+  try {
+    const res = await fetch(`${API_URL}/api/entregas/${id}/status`, {
+      method: 'PUT',
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ status: novoStatus })
+    });
+    if (!res.ok) {
+      alert('Erro ao atualizar o status da entrega.');
+      loadEntregas(); // recarrega p/ voltar o state
+    }
+  } catch (e) {
+    console.error('Erro ao atualizar status:', e);
+  }
+}
+
 
 // ─── Chat Badge ───────────────────────────────────────────────────────────────
 function updateChatBadge() {

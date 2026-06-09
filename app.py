@@ -174,6 +174,19 @@ class SlaHistory(db_sql.Model):
     finalizado_em = db_sql.Column(db_sql.Text, nullable=True)
     criado_em = db_sql.Column(db_sql.Text, nullable=False)
 
+class Entrega(db_sql.Model):
+    id = db_sql.Column(db_sql.Integer, primary_key=True)
+    nome_peca = db_sql.Column(db_sql.String(150), nullable=False)
+    tamanho_peca = db_sql.Column(db_sql.String(50), nullable=True)
+    nome_cliente = db_sql.Column(db_sql.String(150), nullable=False)
+    localizacao = db_sql.Column(db_sql.String(255), nullable=True)
+    telefone_cliente = db_sql.Column(db_sql.String(30), nullable=True)
+    pago = db_sql.Column(db_sql.Boolean, default=False)
+    forma_pagamento = db_sql.Column(db_sql.String(50), nullable=True)
+    valor = db_sql.Column(db_sql.String(50), nullable=True)
+    status = db_sql.Column(db_sql.String(50), default='Pendente')
+    criado_em = db_sql.Column(db_sql.DateTime, default=datetime.datetime.utcnow)
+
 # ─── Utils ──────────────────────────────────────────────────────────────────
 def normalize_br_phone(phone_str):
     if not phone_str: return ""
@@ -463,6 +476,56 @@ def auth_required(f):
         
         return f(*args, **kwargs)
     return decorated
+
+# ─── Entregas Routes ────────────────────────────────────────────────────────
+
+@app.route('/api/entregas', methods=['GET'])
+@auth_required
+def get_entregas():
+    entregas = Entrega.query.order_by(Entrega.id.desc()).all()
+    return jsonify([{
+        'id': e.id,
+        'nome_peca': e.nome_peca,
+        'tamanho_peca': e.tamanho_peca,
+        'nome_cliente': e.nome_cliente,
+        'localizacao': e.localizacao,
+        'telefone_cliente': e.telefone_cliente,
+        'pago': e.pago,
+        'forma_pagamento': e.forma_pagamento,
+        'valor': e.valor,
+        'status': e.status,
+        'criado_em': e.criado_em.isoformat() if e.criado_em else None
+    } for e in entregas])
+
+@app.route('/api/entregas', methods=['POST'])
+@auth_required
+def create_entrega():
+    data = request.json
+    nova_entrega = Entrega(
+        nome_peca=data.get('nome_peca'),
+        tamanho_peca=data.get('tamanho_peca'),
+        nome_cliente=data.get('nome_cliente'),
+        localizacao=data.get('localizacao'),
+        telefone_cliente=data.get('telefone_cliente'),
+        pago=data.get('pago', False),
+        forma_pagamento=data.get('forma_pagamento'),
+        valor=data.get('valor'),
+        status=data.get('status', 'Pendente')
+    )
+    db_sql.session.add(nova_entrega)
+    db_sql.session.commit()
+    return jsonify({'success': True, 'id': nova_entrega.id})
+
+@app.route('/api/entregas/<int:id>/status', methods=['PUT'])
+@auth_required
+def update_entrega_status(id):
+    entrega = Entrega.query.get(id)
+    if not entrega:
+        return jsonify({'error': 'Entrega não encontrada'}), 404
+    data = request.json
+    entrega.status = data.get('status', entrega.status)
+    db_sql.session.commit()
+    return jsonify({'success': True, 'status': entrega.status})
 
 def admin_required(f):
     @wraps(f)
