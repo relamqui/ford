@@ -13,6 +13,9 @@ def get_now():
     return datetime.datetime.now(pytz.timezone('America/Sao_Paulo'))
 
 from functools import wraps
+import time
+from urllib.parse import urlparse
+from pywebpush import webpush, WebPushException
 from flask import Flask, request, jsonify, send_from_directory
 from flask_socketio import SocketIO, emit, join_room
 from flask_cors import CORS
@@ -97,6 +100,14 @@ class User(db_sql.Model):
     setor_id = db_sql.Column(db_sql.Integer, db_sql.ForeignKey('setor.id'), nullable=True)
     filial = db_sql.Column(db_sql.String(150), nullable=True)
     setor = db_sql.Column(db_sql.String(150), nullable=True)
+
+class PushSubscription(db_sql.Model):
+    id = db_sql.Column(db_sql.Integer, primary_key=True)
+    user_id = db_sql.Column(db_sql.Integer, db_sql.ForeignKey('user.id'), nullable=False)
+    endpoint = db_sql.Column(db_sql.Text, nullable=False, unique=True)
+    p256dh = db_sql.Column(db_sql.String(255), nullable=False)
+    auth = db_sql.Column(db_sql.String(255), nullable=False)
+    created_at = db_sql.Column(db_sql.DateTime, default=datetime.datetime.utcnow)
 
 class Contact(db_sql.Model):
     id = db_sql.Column(db_sql.String(150), primary_key=True) # c_phone_instance
@@ -530,6 +541,68 @@ def get_entregas_disponiveis():
         'longitude': e.longitude,
         'criado_em': e.criado_em.isoformat() if e.criado_em else None
     } for e in entregas])
+
+@app.route('/api/entregador/push/subscribe', methods=['POST'])
+@auth_required
+def push_subscribe():
+    user_id = request.user.get('id')
+    sub_data = request.json.get('subscription')
+    if not sub_data:
+        return jsonify({'error': 'Subscription data missing'}), 400
+        
+    endpoint = sub_data.get('endpoint')
+    keys = sub_data.get('keys', {})
+    p256dh = keys.get('p256dh')
+    auth = keys.get('auth')
+    
+    if not endpoint or not p256dh or not auth:
+        return jsonify({'error': 'Invalid subscription data'}), 400
+        
+    sub = PushSubscription.query.filter_by(endpoint=endpoint).first()
+    if not sub:
+        sub = PushSubscription(user_id=user_id, endpoint=endpoint, p256dh=p256dh, auth=auth)
+        db_sql.session.add(sub)
+    else:
+        sub.user_id = user_id
+        sub.p256dh = p256dh
+        sub.auth = auth
+    db_sql.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/admin/push/test', methods=['POST'])
+@auth_required
+@admin_required
+def push_test():
+    subs = PushSubscription.query.all()
+    # Pega a chave privada, se não estiver na var de ambiente tenta usar o arquivo
+    vapid_private_key = os.environ.get('VAPID_PRIVATE_KEY', 'private_key.pem')
+    vapid_claims = {"sub": "mailto:admin@example.com"}
+    
+    success_count = 0
+    for sub in subs:
+        sub_info = {
+            "endpoint": sub.endpoint,
+            "keys": {
+                "p256dh": sub.p256dh,
+                "auth": sub.auth
+            }
+        }
+        try:
+            webpush(
+                subscription_info=sub_info,
+                data=json.dumps({"title": "Teste WPCRM", "body": "Esta é uma notificação nativa do PWA! Se estiver lendo isso com o app fechado, funcionou perfeitamente.", "url": "/entregador"}),
+                vapid_private_key=vapid_private_key,
+                vapid_claims=vapid_claims
+            )
+            success_count += 1
+        except WebPushException as ex:
+            print("WebPush Error:", repr(ex))
+            # Se o endpoint não for mais válido, removemos
+            if ex.response is not None and getattr(ex.response, 'status_code', 500) in [404, 410]:
+                db_sql.session.delete(sub)
+                
+    db_sql.session.commit()
+    return jsonify({'success': True, 'sent': success_count, 'total_subs': len(subs)})
 
 @app.route('/api/entregas', methods=['POST'])
 @auth_required

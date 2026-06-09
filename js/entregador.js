@@ -44,12 +44,54 @@ async function installApp() {
   }
 }
 
+const VAPID_PUBLIC_KEY = 'BNiQ0yNtE5rbfIqdwZbZc-oW4_42MntZAw5T0d5MAooN4UlRB5mwmeP70P_ZNmz4yOC6GXf-pudwKTXu9Uwo3cc';
+
+async function subscribePushNotifications() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      const convertedVapidKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: convertedVapidKey
+      });
+    }
+    
+    // Send subscription to server
+    const token = localStorage.getItem('entregador_token');
+    await fetch(`${API_URL}/api/entregador/push/subscribe`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ subscription })
+    });
+  } catch (err) {
+    console.error('Push subscription failed:', err);
+  }
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
 // Initialization
 document.addEventListener('DOMContentLoaded', () => {
   const token = localStorage.getItem('entregador_token');
   if (token) {
     showScreen('dashboardScreen');
     loadEntregas();
+    subscribePushNotifications();
   } else {
     showScreen('loginScreen');
   }
@@ -96,6 +138,7 @@ async function login() {
       localStorage.setItem('entregador_token', data.token);
       showScreen('dashboardScreen');
       loadEntregas();
+      subscribePushNotifications();
     } else {
       errorDiv.innerText = data.error || 'Falha no login.';
     }
