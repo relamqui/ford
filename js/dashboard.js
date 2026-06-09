@@ -565,8 +565,83 @@ function openNovaEntregaModal() {
   document.getElementById('entregaPago').checked = false;
   document.getElementById('entregaFormaPagamento').value = '';
   document.getElementById('entregaValor').value = '';
-  document.getElementById('entregaStatus').value = 'Pendente';
+  document.getElementById('entregaStatus').value = 'Pronto para coleta';
+  document.getElementById('entregaLat').value = '';
+  document.getElementById('entregaLng').value = '';
   togglePagamentoFields();
+  
+  // Initialize map after modal is visible
+  setTimeout(() => { initLeafletMap(); }, 100);
+}
+
+let entregaMap = null;
+let entregaMarker = null;
+
+function initLeafletMap() {
+  if (entregaMap) {
+    entregaMap.invalidateSize();
+    return;
+  }
+  
+  // Default coordinate (Brazil center as fallback)
+  const initialLat = -14.235004;
+  const initialLng = -51.92528;
+  
+  entregaMap = L.map('mapEntrega').setView([initialLat, initialLng], 4);
+  
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(entregaMap);
+  
+  entregaMarker = L.marker([initialLat, initialLng], {draggable: true}).addTo(entregaMap);
+  
+  entregaMarker.on('dragend', function(e) {
+    const position = entregaMarker.getLatLng();
+    document.getElementById('entregaLat').value = position.lat;
+    document.getElementById('entregaLng').value = position.lng;
+  });
+  
+  entregaMap.on('click', function(e) {
+    entregaMarker.setLatLng(e.latlng);
+    document.getElementById('entregaLat').value = e.latlng.lat;
+    document.getElementById('entregaLng').value = e.latlng.lng;
+  });
+  
+  // Try to get user location
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(function(pos) {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      entregaMap.setView([lat, lng], 14);
+      entregaMarker.setLatLng([lat, lng]);
+      document.getElementById('entregaLat').value = lat;
+      document.getElementById('entregaLng').value = lng;
+    });
+  }
+}
+
+async function buscarLocalizacaoMapa() {
+  const query = document.getElementById('entregaLocalizacao').value.trim();
+  if (!query) return;
+  
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
+    const data = await res.json();
+    if (data && data.length > 0) {
+      const lat = parseFloat(data[0].lat);
+      const lng = parseFloat(data[0].lon);
+      if (entregaMap && entregaMarker) {
+        entregaMap.setView([lat, lng], 16);
+        entregaMarker.setLatLng([lat, lng]);
+        document.getElementById('entregaLat').value = lat;
+        document.getElementById('entregaLng').value = lng;
+      }
+    } else {
+      alert('Endereço não encontrado no mapa.');
+    }
+  } catch (err) {
+    console.error(err);
+  }
 }
 
 function closeNovaEntregaModal() {
@@ -616,7 +691,9 @@ async function submitNovaEntrega() {
         pago: isPago,
         forma_pagamento: isPago ? null : formaPagamento,
         valor: isPago ? null : valor,
-        status: status
+        status: status,
+        latitude: document.getElementById('entregaLat').value || null,
+        longitude: document.getElementById('entregaLng').value || null
       })
     });
 
@@ -657,7 +734,7 @@ function renderEntregas(entregas) {
     return;
   }
 
-  const options = ['Pendente', 'Saiu para entrega', 'Entregue', 'Cancelado'];
+  const options = ['Pronto para coleta', 'Saiu para entrega', 'Entregue', 'Cancelado'];
 
   entregas.forEach(e => {
     let selectStatus = `<select onchange="updateEntregaStatus(${e.id}, this.value)">`;
@@ -667,6 +744,11 @@ function renderEntregas(entregas) {
     selectStatus += `</select>`;
 
     let pagInfo = e.pago ? '<span class="tag-green" style="padding:4px 8px;border-radius:4px;font-size:11px;">Pago</span>' : `<span class="tag-orange" style="padding:4px 8px;border-radius:4px;font-size:11px;">A Pagar</span><div style="font-size:11px;margin-top:6px;color:var(--text-secondary)">${e.forma_pagamento || '-'} <br> R$ ${e.valor || '0.00'}</div>`;
+    
+    let locationHtml = escapeHtml(e.localizacao);
+    if (e.latitude && e.longitude) {
+      locationHtml += `<br><a href="https://maps.google.com/?q=${e.latitude},${e.longitude}" target="_blank" style="color:var(--green);font-size:11px;text-decoration:none;display:inline-block;margin-top:4px;">📍 Abrir no Maps</a>`;
+    }
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -674,8 +756,9 @@ function renderEntregas(entregas) {
       <td><strong>${escapeHtml(e.nome_cliente)}</strong></td>
       <td>${escapeHtml(e.telefone_cliente || '-')}</td>
       <td><strong>${escapeHtml(e.nome_peca)}</strong><br><span style="font-size:12px;color:var(--text-secondary);margin-top:4px;display:inline-block;">Tam: ${escapeHtml(e.tamanho_peca || '-')}</span></td>
-      <td>${escapeHtml(e.localizacao)}</td>
+      <td>${locationHtml}</td>
       <td>${pagInfo}</td>
+      <td style="font-size:13px; color:var(--text-secondary);">${escapeHtml(e.nome_atendente || '-')}</td>
       <td>${selectStatus}</td>
       <td>
         <button class="icon-btn" title="Editar (Em breve)" style="color:var(--green);"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></button>

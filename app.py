@@ -174,11 +174,14 @@ class Entrega(db_sql.Model):
     tamanho_peca = db_sql.Column(db_sql.String(50), nullable=True)
     nome_cliente = db_sql.Column(db_sql.String(150), nullable=False)
     localizacao = db_sql.Column(db_sql.String(255), nullable=True)
+    latitude = db_sql.Column(db_sql.String(50), nullable=True)
+    longitude = db_sql.Column(db_sql.String(50), nullable=True)
     telefone_cliente = db_sql.Column(db_sql.String(30), nullable=True)
     pago = db_sql.Column(db_sql.Boolean, default=False)
     forma_pagamento = db_sql.Column(db_sql.String(50), nullable=True)
     valor = db_sql.Column(db_sql.String(50), nullable=True)
-    status = db_sql.Column(db_sql.String(50), default='Pendente')
+    status = db_sql.Column(db_sql.String(50), default='Pronto para coleta')
+    nome_atendente = db_sql.Column(db_sql.String(150), nullable=True)
     criado_em = db_sql.Column(db_sql.DateTime, default=datetime.datetime.utcnow)
 
 # ─── Utils ──────────────────────────────────────────────────────────────────
@@ -340,6 +343,15 @@ def migrate_to_sql():
             db_sql.session.commit()
         except Exception:
             db_sql.session.rollback()
+
+        # Add new columns for Entrega if missing
+        try:
+            db_sql.session.execute(db_sql.text('ALTER TABLE "entrega" ADD COLUMN nome_atendente VARCHAR(150)'))
+            db_sql.session.execute(db_sql.text('ALTER TABLE "entrega" ADD COLUMN latitude VARCHAR(50)'))
+            db_sql.session.execute(db_sql.text('ALTER TABLE "entrega" ADD COLUMN longitude VARCHAR(50)'))
+            db_sql.session.commit()
+        except Exception:
+            db_sql.session.rollback()
         
         # Add assignment columns to contact
         try:
@@ -488,6 +500,9 @@ def get_entregas():
         'forma_pagamento': e.forma_pagamento,
         'valor': e.valor,
         'status': e.status,
+        'nome_atendente': e.nome_atendente,
+        'latitude': e.latitude,
+        'longitude': e.longitude,
         'criado_em': e.criado_em.isoformat() if e.criado_em else None
     } for e in entregas])
 
@@ -504,7 +519,10 @@ def create_entrega():
         pago=data.get('pago', False),
         forma_pagamento=data.get('forma_pagamento'),
         valor=data.get('valor'),
-        status=data.get('status', 'Pendente')
+        status=data.get('status', 'Pronto para coleta'),
+        latitude=data.get('latitude'),
+        longitude=data.get('longitude'),
+        nome_atendente=request.user.get('name', 'Desconhecido')
     )
     db_sql.session.add(nova_entrega)
     db_sql.session.commit()
