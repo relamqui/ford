@@ -570,8 +570,10 @@ def push_subscribe():
 
 @app.route('/api/admin/push/test', methods=['POST'])
 @auth_required
-@admin_required
 def push_test():
+    if request.user.get('role') != 'admin':
+        return jsonify({'error': 'Acesso negado'}), 403
+        
     from pywebpush import webpush, WebPushException
     
     subs = PushSubscription.query.all()
