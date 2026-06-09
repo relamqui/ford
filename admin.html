@@ -656,7 +656,13 @@
           headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await res.json();
-        if (res.ok) alert(`Push enviado! Foram enviadas ${data.sent} notificações para ${data.total_subs} aparelhos registrados.`);
+        if (res.ok) {
+          let msg = `Push enviado! Foram enviadas ${data.sent} notificações para ${data.total_subs} aparelhos registrados.`;
+          if (data.errors && data.errors.length > 0) {
+              msg += `\n\nErros detectados: ${data.errors.join(', ')}`;
+          }
+          alert(msg);
+        }
         else alert(data.error || 'Erro ao enviar push');
       } catch (err) { alert('Erro de conexão com o servidor'); }
     }

@@ -584,6 +584,7 @@ def push_test():
     vapid_claims = {"sub": "mailto:admin@example.com"}
     
     success_count = 0
+    errors = []
     for sub in subs:
         sub_info = {
             "endpoint": sub.endpoint,
@@ -602,12 +603,13 @@ def push_test():
             success_count += 1
         except Exception as ex:
             print("WebPush Error:", repr(ex))
+            errors.append(repr(ex))
             # Se for erro do webpush (WebPushException), podemos verificar a resposta
             if hasattr(ex, 'response') and ex.response is not None and getattr(ex.response, 'status_code', 500) in [404, 410]:
                 db_sql.session.delete(sub)
                 
     db_sql.session.commit()
-    return jsonify({'success': True, 'sent': success_count, 'total_subs': len(subs)})
+    return jsonify({'success': True, 'sent': success_count, 'total_subs': len(subs), 'errors': errors})
 
 @app.route('/api/entregas', methods=['POST'])
 @auth_required
