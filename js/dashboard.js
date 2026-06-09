@@ -597,14 +597,12 @@ function initLeafletMap() {
   
   entregaMarker.on('dragend', function(e) {
     const position = entregaMarker.getLatLng();
-    document.getElementById('entregaLat').value = position.lat;
-    document.getElementById('entregaLng').value = position.lng;
+    updateMapLocationFields(position.lat, position.lng);
   });
   
   entregaMap.on('click', function(e) {
     entregaMarker.setLatLng(e.latlng);
-    document.getElementById('entregaLat').value = e.latlng.lat;
-    document.getElementById('entregaLng').value = e.latlng.lng;
+    updateMapLocationFields(e.latlng.lat, e.latlng.lng);
   });
   
   // Try to get user location
@@ -614,9 +612,23 @@ function initLeafletMap() {
       const lng = pos.coords.longitude;
       entregaMap.setView([lat, lng], 14);
       entregaMarker.setLatLng([lat, lng]);
-      document.getElementById('entregaLat').value = lat;
-      document.getElementById('entregaLng').value = lng;
+      updateMapLocationFields(lat, lng);
     });
+  }
+}
+
+async function updateMapLocationFields(lat, lng) {
+  document.getElementById('entregaLat').value = lat;
+  document.getElementById('entregaLng').value = lng;
+  
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+    const data = await res.json();
+    if (data && data.display_name) {
+      document.getElementById('entregaLocalizacao').value = data.display_name;
+    }
+  } catch (err) {
+    console.error('Erro ao buscar endereço do pino:', err);
   }
 }
 
