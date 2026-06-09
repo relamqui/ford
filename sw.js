@@ -37,7 +37,7 @@ self.addEventListener('push', (event) => {
     const options = {
       body: data.body,
       icon: '/img/icon-192.png',
-      badge: '/img/icon-192.png',
+      badge: '/img/badge-truck.png',
       data: { url: data.url || '/' },
       vibrate: [200, 100, 200]
     };
