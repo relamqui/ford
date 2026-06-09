@@ -1,12 +1,7 @@
-# Auto-detectar modo async: eventlet em produção (Docker/Python 3.11),
-# threading em desenvolvimento local (Python 3.12+ onde eventlet falha)
-_async_mode = 'threading'
-try:
-    import eventlet
-    eventlet.monkey_patch()
-    _async_mode = 'eventlet'
-except Exception:
-    pass
+# Modo async: quando executado via Gunicorn com --worker-class eventlet,
+# o próprio Gunicorn faz o monkey_patch. Em dev local, usa threading.
+import sys
+_async_mode = 'eventlet' if 'eventlet' in sys.modules else 'threading'
 
 import os
 import jwt

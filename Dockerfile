@@ -17,12 +17,12 @@ COPY . .
 RUN mkdir -p /app/data
 
 # Expõe a porta que o sistema usa
-EXPOSE 3008
+EXPOSE 9010
 
 # Define variáveis de ambiente padrão
-ENV PORT=3008
+ENV PORT=9010
 ENV DB_PATH=/app/data/db.json
 ENV TZ=America/Sao_Paulo
 
 # Comando para rodar a aplicação em produção com Gunicorn + Eventlet
-CMD ["gunicorn", "--worker-class", "eventlet", "-w", "1", "--bind", "0.0.0.0:3008", "app:app"]
+CMD ["gunicorn", "--worker-class", "eventlet", "-w", "1", "--bind", "0.0.0.0:9010", "app:app"]
