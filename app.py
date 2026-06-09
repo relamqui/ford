@@ -15,7 +15,6 @@ def get_now():
 from functools import wraps
 import time
 from urllib.parse import urlparse
-from pywebpush import webpush, WebPushException
 from flask import Flask, request, jsonify, send_from_directory
 from flask_socketio import SocketIO, emit, join_room
 from flask_cors import CORS
@@ -573,6 +572,8 @@ def push_subscribe():
 @auth_required
 @admin_required
 def push_test():
+    from pywebpush import webpush, WebPushException
+    
     subs = PushSubscription.query.all()
     # Pega a chave privada, se não estiver na var de ambiente tenta usar o arquivo
     vapid_private_key = os.environ.get('VAPID_PRIVATE_KEY', 'private_key.pem')
