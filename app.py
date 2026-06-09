@@ -575,13 +575,20 @@ def push_test():
         return jsonify({'error': 'Acesso negado'}), 403
         
     from pywebpush import webpush, WebPushException
+    from urllib.parse import urlparse
+    import time
     
     subs = PushSubscription.query.all()
     # Pega a chave privada, tenta caminho absoluto para não dar erro
     base_dir = os.path.dirname(os.path.abspath(__file__))
     default_key_path = os.path.join(base_dir, 'private_key.pem')
     vapid_private_key = os.environ.get('VAPID_PRIVATE_KEY', default_key_path)
-    vapid_claims = {"sub": "https://teste-presidente-disel.ioms5g.easypanel.host"}
+    
+    payload = json.dumps({
+        "title": "Teste WPCRM",
+        "body": "Esta é uma notificação nativa do PWA! Se estiver lendo isso com o app fechado, funcionou perfeitamente.",
+        "url": "/entregador"
+    })
     
     success_count = 0
     errors = []
@@ -593,20 +600,32 @@ def push_test():
                 "auth": sub.auth
             }
         }
+        # Apple exige que aud, exp e sub estejam EXPLÍCITOS no JWT
+        parsed = urlparse(sub.endpoint)
+        aud = f"{parsed.scheme}://{parsed.netloc}"
+        vapid_claims = {
+            "sub": "mailto:contato@presidentedisel.com",
+            "aud": aud,
+            "exp": int(time.time()) + (12 * 3600)
+        }
         try:
             webpush(
                 subscription_info=sub_info,
-                data=json.dumps({"title": "Teste WPCRM", "body": "Esta é uma notificação nativa do PWA! Se estiver lendo isso com o app fechado, funcionou perfeitamente.", "url": "/entregador"}),
+                data=payload,
                 vapid_private_key=vapid_private_key,
                 vapid_claims=vapid_claims
             )
             success_count += 1
         except Exception as ex:
-            print("WebPush Error:", repr(ex))
-            errors.append(repr(ex))
-            # Se for erro do webpush (WebPushException), podemos verificar a resposta
-            if hasattr(ex, 'response') and ex.response is not None and getattr(ex.response, 'status_code', 500) in [404, 410]:
-                db_sql.session.delete(sub)
+            err_msg = str(ex)
+            # Captura body da resposta para debug
+            if hasattr(ex, 'response') and ex.response is not None:
+                err_msg = f"Status {ex.response.status_code}: {ex.response.text}"
+                # Se o endpoint não for mais válido, removemos
+                if getattr(ex.response, 'status_code', 500) in [404, 410]:
+                    db_sql.session.delete(sub)
+            print(f"WebPush Error para {aud}: {err_msg}")
+            errors.append(f"{aud}: {err_msg}")
                 
     db_sql.session.commit()
     return jsonify({'success': True, 'sent': success_count, 'total_subs': len(subs), 'errors': errors})
