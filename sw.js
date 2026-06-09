@@ -3,8 +3,7 @@ const ASSETS = [
   '/entregador',
   '/css/entregador.css',
   '/js/entregador.js',
-  '/img/icon-192.png',
-  '/img/icon-512.png',
+  '/img/icon.svg',
   'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
 ];
 
