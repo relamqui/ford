@@ -69,8 +69,16 @@ async function subscribePushNotifications() {
       },
       body: JSON.stringify({ subscription })
     });
+    
+    // Hide banner on success
+    const banner = document.getElementById('notificationBanner');
+    if(banner) banner.style.display = 'none';
+    
+    alert("Notificações ativadas com sucesso!");
+    
   } catch (err) {
     console.error('Push subscription failed:', err);
+    alert("Falha ao ativar notificações. Verifique se seu navegador suporta Push.");
   }
 }
 
@@ -85,13 +93,58 @@ function urlBase64ToUint8Array(base64String) {
   return outputArray;
 }
 
+function checkNotificationStatus() {
+  const banner = document.getElementById('notificationBanner');
+  if (!banner) return;
+  
+  if (!('Notification' in window)) {
+    banner.style.display = 'none';
+    return;
+  }
+  
+  if (Notification.permission === 'default' || Notification.permission === 'prompt') {
+    banner.style.display = 'block';
+  } else {
+    banner.style.display = 'none';
+    // Se já tiver permissão (granted), tentar renovar/garantir a inscrição de forma silenciosa
+    if (Notification.permission === 'granted') {
+      subscribePushNotificationsSilently();
+    }
+  }
+}
+
+async function subscribePushNotificationsSilently() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      const convertedVapidKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: convertedVapidKey
+      });
+    }
+    const token = localStorage.getItem('entregador_token');
+    if (token) {
+      await fetch(`${API_URL}/api/entregador/push/subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ subscription })
+      });
+    }
+  } catch (e) {
+    console.error('Silent sub failed', e);
+  }
+}
+
 // Initialization
 document.addEventListener('DOMContentLoaded', () => {
   const token = localStorage.getItem('entregador_token');
   if (token) {
     showScreen('dashboardScreen');
     loadEntregas();
-    subscribePushNotifications();
+    checkNotificationStatus();
   } else {
     showScreen('loginScreen');
   }
@@ -138,7 +191,7 @@ async function login() {
       localStorage.setItem('entregador_token', data.token);
       showScreen('dashboardScreen');
       loadEntregas();
-      subscribePushNotifications();
+      checkNotificationStatus();
     } else {
       errorDiv.innerText = data.error || 'Falha no login.';
     }
