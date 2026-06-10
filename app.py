@@ -108,6 +108,15 @@ class PushSubscription(db_sql.Model):
     auth = db_sql.Column(db_sql.String(255), nullable=False)
     created_at = db_sql.Column(db_sql.DateTime, default=datetime.datetime.utcnow)
 
+class DriverLocation(db_sql.Model):
+    id = db_sql.Column(db_sql.Integer, primary_key=True)
+    user_id = db_sql.Column(db_sql.Integer, db_sql.ForeignKey('user.id'), nullable=False, unique=True)
+    lat = db_sql.Column(db_sql.Float, nullable=False)
+    lng = db_sql.Column(db_sql.Float, nullable=False)
+    updated_at = db_sql.Column(db_sql.DateTime, default=datetime.datetime.utcnow)
+    
+    user = db_sql.relationship('User', backref=db_sql.backref('location', uselist=False))
+
 class Contact(db_sql.Model):
     id = db_sql.Column(db_sql.String(150), primary_key=True) # c_phone_instance
     name = db_sql.Column(db_sql.String(100), nullable=False)
@@ -629,6 +638,57 @@ def push_test():
                 
     db_sql.session.commit()
     return jsonify({'success': True, 'sent': success_count, 'total_subs': len(subs), 'errors': errors})
+
+@app.route('/api/entregador/location', methods=['POST'])
+@auth_required
+def update_driver_location():
+    user_id = request.user.get('id')
+    data = request.json
+    lat = data.get('lat')
+    lng = data.get('lng')
+    
+    if lat is None or lng is None:
+        return jsonify({'error': 'Coordenadas ausentes'}), 400
+        
+    try:
+        lat = float(lat)
+        lng = float(lng)
+    except ValueError:
+        return jsonify({'error': 'Coordenadas inválidas'}), 400
+        
+    loc = DriverLocation.query.filter_by(user_id=user_id).first()
+    if not loc:
+        loc = DriverLocation(user_id=user_id, lat=lat, lng=lng)
+        db_sql.session.add(loc)
+    else:
+        loc.lat = lat
+        loc.lng = lng
+        loc.updated_at = datetime.datetime.utcnow()
+        
+    db_sql.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/admin/drivers/locations', methods=['GET'])
+@auth_required
+def get_drivers_locations():
+    if request.user.get('role') != 'admin':
+        return jsonify({'error': 'Acesso negado'}), 403
+        
+    # Pega localizações que foram atualizadas nas últimas 2 horas
+    two_hours_ago = datetime.datetime.utcnow() - datetime.timedelta(hours=2)
+    locations = DriverLocation.query.filter(DriverLocation.updated_at >= two_hours_ago).all()
+    
+    results = []
+    for loc in locations:
+        results.append({
+            'user_id': loc.user_id,
+            'name': loc.user.name if loc.user else 'Desconhecido',
+            'lat': loc.lat,
+            'lng': loc.lng,
+            'updated_at': loc.updated_at.isoformat() + 'Z'
+        })
+        
+    return jsonify({'locations': results})
 
 @app.route('/api/entregas', methods=['POST'])
 @auth_required

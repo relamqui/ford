@@ -145,6 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
     showScreen('dashboardScreen');
     loadEntregas();
     checkNotificationStatus();
+    startLocationTracking();
   } else {
     showScreen('loginScreen');
   }
@@ -192,6 +193,7 @@ async function login() {
       showScreen('dashboardScreen');
       loadEntregas();
       checkNotificationStatus();
+      startLocationTracking();
     } else {
       errorDiv.innerText = data.error || 'Falha no login.';
     }
@@ -323,3 +325,50 @@ function escapeHtml(text) {
   div.innerText = text;
   return div.innerHTML;
 }
+
+// === LOCATION TRACKING ===
+let locationInterval = null;
+
+function startLocationTracking() {
+  // Clear any existing interval
+  if (locationInterval) clearInterval(locationInterval);
+  
+  // Track immediately
+  trackLocation();
+  
+  // Then track every 60 seconds
+  locationInterval = setInterval(trackLocation, 60000);
+}
+
+function trackLocation() {
+  if (!navigator.geolocation) return;
+  
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      sendLocationToBackend(position.coords.latitude, position.coords.longitude);
+    },
+    (err) => {
+      console.warn('Erro ao obter GPS (pode estar negado ou desativado):', err.message);
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+  );
+}
+
+async function sendLocationToBackend(lat, lng) {
+  const token = localStorage.getItem('entregador_token');
+  if (!token) return;
+  
+  try {
+    await fetch(`${API_URL}/api/entregador/location`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ lat, lng })
+    });
+  } catch (err) {
+    console.error('Falha ao enviar localização', err);
+  }
+}
+
