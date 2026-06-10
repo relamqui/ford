@@ -336,8 +336,8 @@ function startLocationTracking() {
   // Track immediately
   trackLocation();
   
-  // Then track every 60 seconds
-  locationInterval = setInterval(trackLocation, 60000);
+  // Then track every 5 seconds
+  locationInterval = setInterval(trackLocation, 5000);
 }
 
 function trackLocation() {

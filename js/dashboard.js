@@ -2993,3 +2993,100 @@ window.showNewChatWithNumber = async function(number) {
     }
 };
 
+// ==========================================
+// RASTREAMENTO GLOBAL DE ENTREGADORES (MAPA)
+// ==========================================
+let globalDriverMap = null;
+let globalDriverMarkers = {};
+let driverTrackingInterval = null;
+
+function initGlobalDriverMap() {
+  if (globalDriverMap) return;
+  const container = document.getElementById('driverTrackingMap');
+  if (!container) return;
+
+  globalDriverMap = L.map('driverTrackingMap').setView([-15.7801, -47.9292], 4);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(globalDriverMap);
+
+  fetchGlobalDriverLocations();
+  if(driverTrackingInterval) clearInterval(driverTrackingInterval);
+  driverTrackingInterval = setInterval(fetchGlobalDriverLocations, 5000); // 5 segundos
+}
+
+async function fetchGlobalDriverLocations() {
+  const token = localStorage.getItem('wp_crm_token');
+  if (!token) return;
+
+  try {
+    const res = await fetch(`${API_URL}/api/admin/drivers/locations`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    if (data.locations) {
+      updateGlobalDriverMap(data.locations);
+    }
+  } catch (err) {
+    console.error('Erro ao buscar loc de entregadores:', err);
+  }
+}
+
+function updateGlobalDriverMap(locations) {
+  if (!globalDriverMap) return;
+
+  const currentIds = new Set();
+  let hasPoints = false;
+
+  // Custom Icon
+  const truckIcon = L.icon({
+    iconUrl: 'https://cdn-icons-png.flaticon.com/512/3089/3089851.png', // Um icone de caminhao basico
+    iconSize: [32, 32],
+    iconAnchor: [16, 32],
+    popupAnchor: [0, -32]
+  });
+
+  locations.forEach(loc => {
+    currentIds.add(loc.user_id);
+
+    const latLng = [loc.lat, loc.lng];
+    const lastUpdate = new Date(loc.updated_at).toLocaleTimeString();
+    
+    if (globalDriverMarkers[loc.user_id]) {
+      // Atualiza
+      globalDriverMarkers[loc.user_id].setLatLng(latLng);
+      globalDriverMarkers[loc.user_id].setTooltipContent(`<b>${loc.name}</b><br>Atualizado: ${lastUpdate}`);
+    } else {
+      // Cria
+      const marker = L.marker(latLng, {icon: truckIcon}).addTo(globalDriverMap);
+      marker.bindTooltip(`<b>${loc.name}</b><br>Atualizado: ${lastUpdate}`, {
+        permanent: false,
+        direction: 'top'
+      });
+      globalDriverMarkers[loc.user_id] = marker;
+    }
+    hasPoints = true;
+  });
+
+  // Remove offline
+  for (const id in globalDriverMarkers) {
+    if (!currentIds.has(Number(id))) {
+      globalDriverMap.removeLayer(globalDriverMarkers[id]);
+      delete globalDriverMarkers[id];
+    }
+  }
+}
+
+// Iniciar o mapa quando entrar na aba de entregas
+const originalSetView = setView;
+setView = function(view) {
+  originalSetView(view);
+  if (view === 'entregas') {
+    setTimeout(initGlobalDriverMap, 300);
+  } else {
+    if (driverTrackingInterval) {
+      clearInterval(driverTrackingInterval);
+      driverTrackingInterval = null;
+    }
+  }
+};
