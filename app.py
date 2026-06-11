@@ -707,9 +707,13 @@ def get_drivers_locations():
 def create_entrega():
     data = request.json
     
-    # Gerar código de verificação aleatório de 4 caracteres
+    # Gerar código de verificação: 2 letras e 2 números embaralhados
     import random, string
-    codigo = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+    letras = random.choices(string.ascii_uppercase, k=2)
+    numeros = random.choices(string.digits, k=2)
+    codigo_lista = letras + numeros
+    random.shuffle(codigo_lista)
+    codigo = ''.join(codigo_lista)
 
     nova_entrega = Entrega(
         nome_peca=data.get('nome_peca'),
