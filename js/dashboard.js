@@ -746,14 +746,7 @@ function renderEntregas(entregas) {
     return;
   }
 
-  const options = ['Pronto para coleta', 'Saiu para entrega', 'Entregue', 'Cancelado'];
-
-  entregas.forEach(e => {
-    let selectStatus = `<select onchange="updateEntregaStatus(${e.id}, this.value)">`;
-    options.forEach(opt => {
-      selectStatus += `<option value="${opt}" ${e.status === opt ? 'selected' : ''}>${opt}</option>`;
-    });
-    selectStatus += `</select>`;
+  entregas.forEach(e => { let statusColor = '#3b4a54'; if (e.status === 'Pronto para coleta') statusColor = '#00a884'; else if (e.status === 'Saiu para entrega') statusColor = '#f59e0b'; else if (e.status === 'Entregue') statusColor = '#3b82f6'; else if (e.status === 'Cancelado') statusColor = '#ef4444'; let statusBadge = `<span style="padding:4px 8px;border-radius:4px;font-size:11px;font-weight:600;background:${statusColor};color:white;">${escapeHtml(e.status)}</span>`;
 
     let pagInfo = e.pago ? '<span class="tag-green" style="padding:4px 8px;border-radius:4px;font-size:11px;">Pago</span>' : `<span class="tag-orange" style="padding:4px 8px;border-radius:4px;font-size:11px;">A Pagar</span><div style="font-size:11px;margin-top:6px;color:var(--text-secondary)">${e.forma_pagamento || '-'} <br> R$ ${e.valor || '0.00'}</div>`;
     
@@ -3091,3 +3084,4 @@ setView = function(view) {
     }
   }
 };
+
