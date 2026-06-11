@@ -321,7 +321,7 @@ async function aceitarEntrega() {
   const codigo = prompt("Digite o código de verificação para travar essa entrega em seu nome:");
   if (!codigo) return; // Usuário cancelou ou deixou vazio
   
-  const token = localStorage.getItem('wp_crm_token');
+  const token = localStorage.getItem('entregador_token');
   try {
     const res = await fetch(`${API_URL}/api/entregador/aceitar_entrega`, {
       method: 'POST',
