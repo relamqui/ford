@@ -313,10 +313,38 @@ function voltarParaDashboard() {
   loadEntregas();
 }
 
-function aceitarEntrega() {
+async function aceitarEntrega() {
   if (!currentEntrega) return;
-  // TODO: Aqui será implementada a lógica de mudança de status (ex: "Saiu para entrega" ou associar entregador)
-  alert('Você clicou em Aceitar. A lógica será definida futuramente.');
+  
+  // Se já está aceita por esse entregador, vira "Concluir Entrega"
+  // Para fins do plano, vamos tratar apenas o aceite primeiro
+  const codigo = prompt("Digite o código de verificação para travar essa entrega em seu nome:");
+  if (!codigo) return; // Usuário cancelou ou deixou vazio
+  
+  const token = localStorage.getItem('wp_crm_token');
+  try {
+    const res = await fetch(`${API_URL}/api/entregador/aceitar_entrega`, {
+      method: 'POST',
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        entrega_id: currentEntrega.id,
+        codigo_verificacao: codigo
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      alert('Entrega travada em seu nome com sucesso!');
+      voltarParaDashboard();
+    } else {
+      alert(`Erro: ${data.error || 'Código incorreto ou entrega indisponível.'}`);
+    }
+  } catch (err) {
+    console.error(err);
+    alert('Erro ao se conectar ao servidor.');
+  }
 }
 
 function escapeHtml(text) {

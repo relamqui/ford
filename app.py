@@ -202,6 +202,8 @@ class Entrega(db_sql.Model):
     status = db_sql.Column(db_sql.String(50), default='Pronto para coleta')
     nome_atendente = db_sql.Column(db_sql.String(150), nullable=True)
     criado_em = db_sql.Column(db_sql.DateTime, default=datetime.datetime.utcnow)
+    codigo_verificacao = db_sql.Column(db_sql.String(20), nullable=True)
+    entregador_id = db_sql.Column(db_sql.Integer, nullable=True)
 
 # ─── Utils ──────────────────────────────────────────────────────────────────
 def normalize_br_phone(phone_str):
@@ -522,6 +524,8 @@ def get_entregas():
         'nome_atendente': e.nome_atendente,
         'latitude': e.latitude,
         'longitude': e.longitude,
+        'codigo_verificacao': e.codigo_verificacao,
+        'entregador_id': e.entregador_id,
         'criado_em': e.criado_em.isoformat() if e.criado_em else None
     } for e in entregas])
 
@@ -547,6 +551,7 @@ def get_entregas_disponiveis():
         'nome_atendente': e.nome_atendente,
         'latitude': e.latitude,
         'longitude': e.longitude,
+        'entregador_id': e.entregador_id,
         'criado_em': e.criado_em.isoformat() if e.criado_em else None
     } for e in entregas])
 
@@ -694,6 +699,11 @@ def get_drivers_locations():
 @auth_required
 def create_entrega():
     data = request.json
+    
+    # Gerar código de verificação aleatório de 4 caracteres
+    import random, string
+    codigo = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+
     nova_entrega = Entrega(
         nome_peca=data.get('nome_peca'),
         tamanho_peca=data.get('tamanho_peca'),
@@ -706,11 +716,12 @@ def create_entrega():
         status=data.get('status', 'Pronto para coleta'),
         latitude=data.get('latitude'),
         longitude=data.get('longitude'),
-        nome_atendente=request.user.get('name', 'Desconhecido')
+        nome_atendente=request.user.get('name', 'Desconhecido'),
+        codigo_verificacao=codigo
     )
     db_sql.session.add(nova_entrega)
     db_sql.session.commit()
-    return jsonify({'success': True, 'id': nova_entrega.id})
+    return jsonify({'success': True, 'id': nova_entrega.id, 'codigo': codigo})
 
 @app.route('/api/entregas/<int:id>/status', methods=['PUT'])
 @auth_required
@@ -720,6 +731,31 @@ def update_entrega_status(id):
         return jsonify({'error': 'Entrega não encontrada'}), 404
     data = request.json
     entrega.status = data.get('status', entrega.status)
+    db_sql.session.commit()
+    return jsonify({'success': True, 'status': entrega.status})
+
+@app.route('/api/entregador/aceitar_entrega', methods=['POST'])
+@auth_required
+def aceitar_entrega():
+    if request.user.get('role') not in ('entregador', 'admin'):
+        return jsonify({'error': 'Acesso negado'}), 403
+        
+    data = request.json
+    entrega_id = data.get('entrega_id')
+    codigo_fornecido = data.get('codigo_verificacao', '').upper().strip()
+    
+    entrega = Entrega.query.get(entrega_id)
+    if not entrega:
+        return jsonify({'error': 'Entrega não encontrada'}), 404
+        
+    if entrega.status != 'Pronto para coleta':
+        return jsonify({'error': 'Entrega já foi aceita por outro entregador ou não está disponível'}), 400
+        
+    if not entrega.codigo_verificacao or entrega.codigo_verificacao != codigo_fornecido:
+        return jsonify({'error': 'Código de verificação incorreto'}), 400
+        
+    entrega.status = 'Saiu para entrega'
+    entrega.entregador_id = request.user.get('id')
     db_sql.session.commit()
     return jsonify({'success': True, 'status': entrega.status})
 

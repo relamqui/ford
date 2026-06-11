@@ -742,7 +742,7 @@ function renderEntregas(entregas) {
   tbody.innerHTML = '';
   
   if (entregas.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:20px; color:#8696a0;">Nenhuma entrega encontrada.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:20px; color:#8696a0;">Nenhuma entrega encontrada.</td></tr>`;
     return;
   }
 
@@ -771,6 +771,7 @@ function renderEntregas(entregas) {
       <td>${locationHtml}</td>
       <td>${pagInfo}</td>
       <td style="font-size:13px; color:var(--text-secondary);">${escapeHtml(e.nome_atendente || '-')}</td>
+      <td style="font-family:monospace; font-size:14px; font-weight:bold; color:var(--text-primary);">${escapeHtml(e.codigo_verificacao || '-')}</td>
       <td>${selectStatus}</td>
       <td>
         <button class="icon-btn" title="Editar (Em breve)" style="color:var(--green);"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></button>
