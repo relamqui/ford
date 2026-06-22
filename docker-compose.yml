@@ -22,12 +22,12 @@ services:
   wpcrm:
     build: .
     ports:
-      - "${APP_PORT:-9010}:9010"
+      - "${APP_PORT:-9020}:9020"
     depends_on:
       database:
         condition: service_healthy
     environment:
-      - PORT=9010
+      - PORT=9020
       - DATABASE_URL=postgresql://${POSTGRES_USER:-wpcrm_user}:${POSTGRES_PASSWORD:-wpcrm_pass_secure}@database:5432/${POSTGRES_DB:-presidente}
       - JWT_SECRET=${JWT_SECRET}
       - WAHA_API_URL=${WAHA_API_URL}

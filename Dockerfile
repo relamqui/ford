@@ -23,11 +23,9 @@ COPY . .
 RUN mkdir -p /app/data
 
 # Porta exposta
-EXPOSE 9010
+EXPOSE 9020
 
-# Variáveis de ambiente padrão (sobrescritas pelas envs do Easypanel/compose)
-ENV PORT=9010
+ENV PORT=9020
 ENV TZ=America/Sao_Paulo
 
-# Inicia com Gunicorn + Eventlet (produção)
-CMD ["gunicorn", "--worker-class", "eventlet", "-w", "1", "--bind", "0.0.0.0:9010", "--timeout", "120", "app:app"]
+CMD ["gunicorn", "--worker-class", "eventlet", "-w", "1", "--bind", "0.0.0.0:9020", "--timeout", "120", "app:app"]

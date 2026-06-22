@@ -25,12 +25,12 @@
         "JWT_SECRET": "TROQUE_POR_UMA_CHAVE_SECRETA_FORTE",
         "WAHA_API_URL": "https://n8n-waha.ioms5g.easypanel.host/",
         "WAHA_API_KEY": "c6ff0ab36f0c4069a8946b3eb1457a1f",
-        "PORT": "9010"
+        "PORT": "9020"
       },
       "ports": [
         {
-          "published": 9010,
-          "target": 9010
+          "published": 9020,
+          "target": 9020
         }
       ]
     }
