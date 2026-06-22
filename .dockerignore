@@ -10,3 +10,15 @@ venv
 *.md
 .DS_Store
 *.log
+*.db
+*.sqlite
+data/
+instance/
+testar_localmente.bat
+iniciar_servidor.bat
+test.js
+test_*.py
+scripts_de_testes/
+stitch_executive_efficiency_dashboard_report*/
+private_key.pem
+public_key.pem

@@ -61,7 +61,10 @@ if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
 
 DB_PATH = os.environ.get('DB_PATH', os.path.join(DATA_DIR, 'db.json'))
-DATABASE_URL = os.environ.get('DATABASE_URL', f"sqlite:///{os.path.join(DATA_DIR, 'wpcrm.db')}")
+DATABASE_URL = os.environ.get('DATABASE_URL', '')
+
+if not DATABASE_URL or DATABASE_URL == 'sqlite_local':
+    DATABASE_URL = f"sqlite:///{os.path.join(DATA_DIR, 'wpcrm.db')}"
 
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
@@ -880,6 +883,47 @@ def add_bot_tag():
         current_tags.append(custom_tag)
         added = True
         
+    # --- Início da Lógica de Distribuição Igualitária (Round-Robin) ---
+    if not contact.assigned_to:
+        # Busca atendentes (role='user')
+        query = User.query.filter(User.role == 'user')
+        
+        # Filtra por filial e setor apenas se foram informados
+        if filial:
+            query = query.filter(db_sql.func.lower(User.filial) == filial.lower())
+        if setor:
+            query = query.filter(db_sql.func.lower(User.setor) == setor.lower())
+            
+        users_query = query.all()
+        
+        if users_query:
+            selected_user = None
+            min_chats = float('inf')
+            
+            # Descobre qual atendente tem o menor número de chats no momento
+            for u in users_query:
+                chat_count = Contact.query.filter_by(assigned_to=u.id).count()
+                if chat_count < min_chats:
+                    min_chats = chat_count
+                    selected_user = u
+                    
+            if selected_user:
+                contact.assigned_to = selected_user.id
+                contact.assigned_name = selected_user.name
+                
+                # Remove a tag BOT caso exista, pois o chat já foi atribuído
+                current_tags = [t for t in current_tags if isinstance(t, str) and t.upper() != 'BOT']
+                
+                # Adiciona a tag de identificação do Atendente (sempre em minúsculo para consistência)
+                at_tag = (selected_user.email or '').lower()
+                if at_tag not in [t.lower() if isinstance(t, str) else t for t in current_tags]:
+                    current_tags.append(at_tag)
+                
+                added = True
+                print(f"[BOT/TAGS] Auto-atribuído {contact.id} para {selected_user.name} ({min_chats} chats ativos)")
+                track_sla_event(phone, atendente=selected_user.name, event_type='ASSIGNED')
+    # --- Fim da Lógica ---
+        
     if added:
         contact.tags = current_tags
         flag_modified(contact, 'tags')
@@ -894,6 +938,16 @@ def add_bot_tag():
             'id': contact.id,
             'tags': list(contact.tags)
         }, room='admin')
+        
+        if contact.assigned_to:
+            assign_data = {
+                'contact_id': contact.id,
+                'assigned_to': contact.assigned_to,
+                'assigned_name': contact.assigned_name,
+                'tags': list(contact.tags)
+            }
+            socketio.emit('chat_assignment', assign_data, room=f'instance_{_inst_room}')
+            socketio.emit('chat_assignment', assign_data, room='admin')
     else:
         print(f"[BOT/TAGS] Nenhuma tag alterada (filial={filial}, setor={setor}, tag={custom_tag})")
         
@@ -974,17 +1028,21 @@ def create_user():
     data = request.json
     f_id = data.get('filial_id')
     s_id = data.get('setor_id')
-    if not f_id or not s_id:
-        return jsonify({'error': 'Filial e Setor são obrigatórios'}), 400
+    
+    # Normaliza string vazia para None para não quebrar a consulta no banco
+    if not f_id: f_id = None
+    if not s_id: s_id = None
 
     if User.query.filter_by(email=data['email']).first():
         return jsonify({'error': 'E-mail já cadastrado'}), 400
         
     filial_name = None
     setor_name = None
-    f_obj = Filial.query.get(f_id)
+    
+    f_obj = Filial.query.get(f_id) if f_id else None
     if f_obj: filial_name = f_obj.name
-    s_obj = Setor.query.get(s_id)
+    
+    s_obj = Setor.query.get(s_id) if s_id else None
     if s_obj: setor_name = s_obj.name
     # Auto-preencher instances quando for gestor, baseado na filial
     auto_instances = []
@@ -1025,7 +1083,7 @@ def manage_user(user_id):
     if request.method == 'PUT':
         data = request.json
         if not data.get('filial_id') or not data.get('setor_id'):
-            return jsonify({'error': 'Filial e Setor são obrigatórios'}), 400
+            pass # Filial e Setor agora são opcionais
 
         user.name = data.get('name', user.name)
         user.email = data.get('email', user.email)
@@ -1036,14 +1094,23 @@ def manage_user(user_id):
             
         f_id = data.get('filial_id')
         s_id = data.get('setor_id')
+        
+        if not f_id: f_id = None
+        if not s_id: s_id = None
+        
+        user.filial_id = f_id
         if f_id:
-            user.filial_id = f_id
             f_obj = Filial.query.get(f_id)
             if f_obj: user.filial = f_obj.name
+        else:
+            user.filial = None
+            
+        user.setor_id = s_id
         if s_id:
-            user.setor_id = s_id
             s_obj = Setor.query.get(s_id)
             if s_obj: user.setor = s_obj.name
+        else:
+            user.setor = None
             
         if data.get('filial'):
             user.filial = data.get('filial')
@@ -1328,7 +1395,7 @@ def gestor_manage_users():
         f_id = data.get('filial_id')
         s_id = data.get('setor_id')
         if not f_id or not s_id:
-            return jsonify({'error': 'Filial e Setor são obrigatórios'}), 400
+            pass # Filial e Setor agora são opcionais
 
         email = data.get('email')
         instances_to_assign = set(data.get('instances', []))
@@ -1413,7 +1480,7 @@ def gestor_update_user(user_id):
     if request.method == 'PUT':
         data = request.json
         if not data.get('filial_id') or not data.get('setor_id'):
-            return jsonify({'error': 'Filial e Setor são obrigatórios'}), 400
+            pass # Filial e Setor agora são opcionais
 
         target_user.name = data.get('name', target_user.name)
         if 'phone' in data:
@@ -3000,8 +3067,12 @@ def get_contacts():
     if request.user.get('role') == 'admin':
         # Admin vê todos os chats
         contacts = Contact.query.all()
+    elif user.role == 'user':
+        # Usuário comum: busca todos os contatos (o filtro por email é feito abaixo)
+        # Não limita por instância para que usuários sem instância configurada possam ver seus chats
+        contacts = Contact.query.all()
     else:
-        # Buscar contatos das instâncias permitidas
+        # Gestor: Buscar contatos das instâncias permitidas
         if allowed_instances:
             contacts = Contact.query.filter(Contact.instance.in_(allowed_instances)).all()
         else:
@@ -3071,32 +3142,19 @@ def get_contacts():
                 contacts = filtered
             # Se não tem filial, não filtra por tag (fica vazio pois sem instância)
         else:
-            # Usuário comum: vê apenas chats com tag exata da sua filial:setor
-            filial_name = user.filial
-            setor_name = user.setor
-            if not filial_name and user.filial_id:
-                f_obj = Filial.query.get(user.filial_id)
-                if f_obj: filial_name = f_obj.name
-            if not setor_name and user.setor_id:
-                s_obj = Setor.query.get(user.setor_id)
-                if s_obj: setor_name = s_obj.name
+            # Usuário comum: vê apenas chats com tag exata do seu email (case-insensitive)
+            required_tag = (user.email or '').lower()
+            print(f"[USER CONTACTS] user={user.id} required_tag={required_tag}")
             
-            if filial_name and setor_name:
-                required_tag = f"{filial_name}:{setor_name}"
-                print(f"[USER CONTACTS] user={user.id} required_tag={required_tag}")
-                
-                filtered = []
-                for c in contacts:
-                    contact_tags = c.tags or []
-                    has_tag = required_tag in contact_tags
-                    # Também mostra chats atribuídos ao próprio usuário
-                    is_assigned_to_me = (c.assigned_to == user.id)
-                    if has_tag or is_assigned_to_me:
-                        filtered.append(c)
-                contacts = filtered
-            # Se não tem filial/setor configurado, não mostra nada
-            elif filial_name or setor_name:
-                contacts = [c for c in contacts if c.assigned_to == user.id]
+            filtered = []
+            for c in contacts:
+                contact_tags = [t.lower() if isinstance(t, str) else t for t in (c.tags or [])]
+                has_tag = required_tag in contact_tags
+                # Também mostra chats atribuídos ao próprio usuário
+                is_assigned_to_me = (c.assigned_to == user.id)
+                if has_tag or is_assigned_to_me:
+                    filtered.append(c)
+            contacts = filtered
         
     contacts_list = []
     for c in contacts:

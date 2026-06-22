@@ -1,7 +1,13 @@
+# Variáveis de ambiente — NÃO commitar
 .env
+
+# Dados locais e banco SQLite
 data/
+*.db
+*.sqlite
 db.json
-wpcrm.db
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
@@ -18,8 +24,26 @@ build/
 *.egg-info/
 .installed.cfg
 *.egg
+venv/
+.venv/
+
+# Node
 node_modules/
+
+# OS
 .DS_Store
 
-# Diretório de scripts de testes e arquivos não usados pelo sistema
+# Chaves privadas
+private_key.pem
+public_key.pem
+
+# Scripts de teste e diagnóstico — apenas uso local
 scripts_de_testes/
+stitch_executive_efficiency_dashboard_report*/
+test.js
+test_api.py
+test_sla.py
+iniciar_servidor.bat
+
+# Arquivos de sessão local do servidor
+instance/

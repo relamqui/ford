@@ -1,0 +1,38 @@
+{
+  "name": "WPCRM Stack",
+  "description": "Sistema de CRM com integração WhatsApp",
+  "services": [
+    {
+      "type": "postgres",
+      "name": "database",
+      "password": "wpcrm_pass_secure"
+    },
+    {
+      "type": "app",
+      "name": "wpcrm-app",
+      "source": {
+        "type": "github",
+        "owner": "seu-usuario",
+        "repo": "seu-repositorio",
+        "ref": "main"
+      },
+      "build": {
+        "type": "dockerfile",
+        "file": "Dockerfile"
+      },
+      "env": {
+        "DATABASE_URL": "postgresql://postgres:wpcrm_pass_secure@$(PROJECT_NAME)_database:5432/postgres",
+        "JWT_SECRET": "TROQUE_POR_UMA_CHAVE_SECRETA_FORTE",
+        "WAHA_API_URL": "https://n8n-waha.ioms5g.easypanel.host/",
+        "WAHA_API_KEY": "c6ff0ab36f0c4069a8946b3eb1457a1f",
+        "PORT": "9010"
+      },
+      "ports": [
+        {
+          "published": 9010,
+          "target": 9010
+        }
+      ]
+    }
+  ]
+}

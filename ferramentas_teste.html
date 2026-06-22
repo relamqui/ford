@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ferramentas de Teste - WP CRM</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            color: #2c3e50;
+        }
+        .tool-card {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            max-width: 500px;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        #result {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+            background: #e8f8f5;
+            color: #117a65;
+            display: none;
+            word-wrap: break-word;
+        }
+        #error {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 4px;
+            background: #fdf2e9;
+            color: #d35400;
+            display: none;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🛠️ Ferramentas de Teste (Dev)</h1>
+    <p>Use essas ferramentas para simular eventos que normalmente viriam de webhooks ou bots externos (Typebot, n8n, etc).</p>
+
+    <!-- Ferramenta 1: Disparar Novo Chat -->
+    <div class="tool-card">
+        <h2>💬 Simular Chegada de Novo Chat</h2>
+        <p>Simula o envio de um cliente pelo bot de atendimento para a API do painel.</p>
+        
+        <div class="form-group">
+            <label for="phone">Telefone do Cliente (Ex: 5511999999999)</label>
+            <input type="text" id="phone" value="5511999999999" placeholder="Apenas números">
+        </div>
+        
+        <div class="form-group">
+            <label for="instance">Nome da Instância (Waha)</label>
+            <input type="text" id="instance" value="Instancia1" placeholder="Ex: Instancia1">
+        </div>
+        
+        <div class="form-group">
+            <label for="filial">Filial (Opcional)</label>
+            <input type="text" id="filial" placeholder="Ex: Matriz">
+        </div>
+        
+        <div class="form-group">
+            <label for="setor">Setor (Opcional)</label>
+            <input type="text" id="setor" placeholder="Ex: Atendimento">
+        </div>
+
+        <button onclick="dispararChat()">🚀 Enviar Webhook Fake</button>
+
+        <div id="result"></div>
+        <div id="error"></div>
+    </div>
+
+    <script>
+        async function dispararChat() {
+            const phone = document.getElementById('phone').value.trim();
+            const instance = document.getElementById('instance').value.trim();
+            const filial = document.getElementById('filial').value.trim();
+            const setor = document.getElementById('setor').value.trim();
+            const resultBox = document.getElementById('result');
+            const errorBox = document.getElementById('error');
+
+            resultBox.style.display = 'none';
+            errorBox.style.display = 'none';
+
+            if (!phone || !instance) {
+                errorBox.innerText = 'Erro: Telefone e Instância são obrigatórios.';
+                errorBox.style.display = 'block';
+                return;
+            }
+
+            const payload = {
+                phone: phone,
+                instance: instance,
+                filial: filial,
+                setor: setor
+            };
+
+            try {
+                // Tenta enviar para a mesma origem se rodar pelo servidor, ou tenta o localhost 9010
+                let url = '/api/bot/tags';
+                if (window.location.protocol === 'file:') {
+                    url = 'http://localhost:3008/api/bot/tags';
+                }
+
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    resultBox.innerText = '✅ Sucesso! Resposta da API: ' + JSON.stringify(data);
+                    resultBox.style.display = 'block';
+                } else {
+                    errorBox.innerText = '❌ Erro da API: ' + JSON.stringify(data);
+                    errorBox.style.display = 'block';
+                }
+            } catch (err) {
+                errorBox.innerText = '❌ Falha na requisição: O servidor local está rodando na porta 3008? (' + err.message + ')';
+                errorBox.style.display = 'block';
+            }
+        }
+    </script>
+
+</body>
+</html>

@@ -144,10 +144,10 @@ async function loadContacts() {
             return true; // Já passou pelo filtro acima (não tem tag de outra filial)
           }
           
-          // Para user comum: só exibir se tem a tag exata filial:setor ou atribuído a mim
-          if (myFilial && mySetor) {
-            const requiredTag = `${myFilial}:${mySetor}`;
-            const hasMyTag = tags.includes(requiredTag);
+          // Para user comum: só exibir se tem a tag exata do seu email ou atribuído a mim
+          if (userData.email) {
+            const requiredTag = userData.email.toLowerCase();
+            const hasMyTag = tags.some(t => typeof t === 'string' && t.toLowerCase() === requiredTag);
             const assignedToMe = c.assigned_to === userData.id;
             return hasMyTag || assignedToMe;
           }
@@ -2309,6 +2309,10 @@ function handleChatAssignment(data) {
     } else if (userData.role === 'gestor' && userData.filial) {
       const hasMyFilial = tags.some(t => typeof t === 'string' && t.includes(':') && !t.toLowerCase().startsWith('atendente:') && t.split(':')[0] === userData.filial);
       if (hasMyFilial) shouldReload = true;
+    }
+    
+    if (userData.role === 'admin' || data.assigned_to === userData.id) {
+        shouldReload = true;
     }
     
     if (shouldReload) {

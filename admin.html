@@ -386,14 +386,14 @@
         </div>
         <div class="form-group">
           <label>Filial</label>
-          <select id="userFilial" onchange="filterSetores()" required
+          <select id="userFilial" onchange="filterSetores()"
             style="width: 100%; padding: 12px; border-radius: 10px; background: var(--bg-input); border: 1px solid var(--border); color: var(--text-primary); outline: none;">
             <option value="">Selecione uma filial</option>
           </select>
         </div>
         <div class="form-group">
           <label>Setor</label>
-          <select id="userSetor" required
+          <select id="userSetor"
             style="width: 100%; padding: 12px; border-radius: 10px; background: var(--bg-input); border: 1px solid var(--border); color: var(--text-primary); outline: none;">
             <option value="">Selecione um setor</option>
           </select>
@@ -931,10 +931,8 @@
       const filialGroup = document.getElementById('userFilial').closest('.form-group');
       if (currentUserRole === 'gestor') {
         filialGroup.style.display = 'none';
-        document.getElementById('userFilial').removeAttribute('required');
       } else {
         filialGroup.style.display = 'flex';
-        document.getElementById('userFilial').setAttribute('required', '');
       }
       // Repopular os selects de filial/setor após o reset do form
       updateSelects();
@@ -963,10 +961,8 @@
       const filialGroup = document.getElementById('userFilial').closest('.form-group');
       if (currentUserRole === 'gestor') {
         filialGroup.style.display = 'none';
-        document.getElementById('userFilial').removeAttribute('required');
       } else {
         filialGroup.style.display = 'flex';
-        document.getElementById('userFilial').setAttribute('required', '');
       }
       document.getElementById('userModal').style.display = 'flex';
     }
@@ -1346,7 +1342,8 @@
       const video = modal.querySelector('video');
       if (audio) audio.pause();
       if (video) video.pause();
+      modal.style.display = 'none';
+    }
   </script>
 </body>
-
 </html>

@@ -1,28 +1,33 @@
-# Use uma imagem oficial do Python como base
+# ── Build Stage ──────────────────────────────────────────────
 FROM python:3.11-slim
 
-# Define o diretório de trabalho no container
+# Evita criação de arquivos .pyc e garante log em tempo real
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
-# Copia os arquivos de dependências
-COPY requirements.txt .
+# Instala dependências do sistema necessárias para psycopg2
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev gcc \
+    && rm -rf /var/lib/apt/lists/*
 
-# Instala as dependências
+# Copia e instala dependências Python primeiro (aproveita cache do Docker)
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia todo o projeto para o container
+# Copia o restante do projeto
 COPY . .
 
-# Cria o diretório de dados persistentes
+# Cria o diretório de dados persistentes (para mídia, etc.)
 RUN mkdir -p /app/data
 
-# Expõe a porta que o sistema usa
+# Porta exposta
 EXPOSE 9010
 
-# Define variáveis de ambiente padrão
+# Variáveis de ambiente padrão (sobrescritas pelas envs do Easypanel/compose)
 ENV PORT=9010
-ENV DB_PATH=/app/data/db.json
 ENV TZ=America/Sao_Paulo
 
-# Comando para rodar a aplicação em produção com Gunicorn + Eventlet
-CMD ["gunicorn", "--worker-class", "eventlet", "-w", "1", "--bind", "0.0.0.0:9010", "app:app"]
+# Inicia com Gunicorn + Eventlet (produção)
+CMD ["gunicorn", "--worker-class", "eventlet", "-w", "1", "--bind", "0.0.0.0:9010", "--timeout", "120", "app:app"]
