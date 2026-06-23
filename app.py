@@ -2532,11 +2532,24 @@ def fetch_and_update_avatar_async(contact_id, phone, instance):
 
     threading.Thread(target=_fetch).start()
 
-@app.route('/api/webhooks/waha', methods=['POST'])
+@app.route('/api/webhooks/waha', methods=['GET', 'POST'])
 def webhook():
+    # ── Diagnóstico: permite testar com GET para confirmar que a rota funciona ──
+    if request.method == 'GET':
+        return jsonify({'status': 'ok', 'message': 'Webhook WAHA ativo e recebendo requisições!'}), 200
+
     try:
+        raw = request.get_data(as_text=True)
+        print(f"[WEBHOOK] Requisição recebida! IP={request.remote_addr} Content-Type={request.content_type}")
+        print(f"[WEBHOOK] Body raw (primeiros 500 chars): {raw[:500]}")
+
         data = request.json
-        if not data: return 'OK', 200
+        if not data:
+            print("[WEBHOOK] Body vazio ou não é JSON válido, retornando OK")
+            return 'OK', 200
+
+        print(f"[WEBHOOK] Evento recebido: event={data.get('event')} session={data.get('session')}")
+
         # ---- WAHA TO INTERNAL CONVERTER ----
         if data.get('event') in ('message', 'message.any', 'message.ack') and 'payload' in data:
             waha_event = data.get('event')
