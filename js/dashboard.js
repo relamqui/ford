@@ -16,6 +16,17 @@ let emojiVisible = false;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function getDefaultInstance() {
+    try {
+        const userStr = localStorage.getItem('wp_crm_user');
+        if (userStr) {
+            const user = JSON.parse(userStr);
+            if (user.instances && user.instances.length > 0) {
+                return user.instances[0];
+            }
+        }
+    } catch (e) {
+        console.error('Erro ao buscar instância padrão:', e);
+    }
     return 'corpal';
 }
 
