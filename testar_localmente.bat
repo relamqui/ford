@@ -22,9 +22,9 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-:: Instalar todas as dependencias do requirements.txt
+:: Instalar dependencias locais (sem psycopg2, usa SQLite)
 echo [1/2] Instalando dependencias...
-pip install -r requirements.txt >nul
+pip install -r requirements-local.txt -q
 if %errorlevel% neq 0 (
     echo [AVISO] Houve um problema ao instalar dependencias.
     pause

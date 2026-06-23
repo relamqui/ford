@@ -1609,7 +1609,7 @@ def send_message():
             "text": text,
             "linkPreview": True,
             "linkPreviewHighQuality": False,
-            "session": "corpal"
+            "session": inst
         }
         print(f"[SEND] URL: {url}")
         print(f"[SEND] Payload: {json.dumps(payload)}")
@@ -1746,7 +1746,7 @@ def send_audio():
 
         url = f"{WAHA_API_URL}/api/sendVoice"
         payload = {
-            "session": "corpal",
+            "session": inst,
             "chatId": f"{number}@c.us",
             "file": {
                 "mimetype": mimetype,
@@ -1842,7 +1842,7 @@ def send_image():
 
         url = f"{WAHA_API_URL}/api/sendImage"
         payload = {
-            "session": "corpal",
+            "session": inst,
             "chatId": f"{number}@c.us",
             "caption": caption,
             "file": {
@@ -1933,7 +1933,7 @@ def send_video():
 
         url = f"{WAHA_API_URL}/api/sendVideo"
         payload = {
-            "session": "corpal",
+            "session": inst,
             "chatId": f"{number}@c.us",
             "caption": caption,
             "file": {
@@ -2056,7 +2056,7 @@ def send_document():
 
         url = f"{WAHA_API_URL}/api/sendFile"
         payload = {
-            "session": "corpal",
+            "session": inst,
             "chatId": f"{number}@c.us",
             "caption": caption,
             "file": {
@@ -2139,7 +2139,7 @@ def send_location():
 
         url = f"{WAHA_API_URL}/api/sendLocation"
         payload = {
-            "session": "corpal",
+            "session": inst,
             "chatId": f"{number}@c.us",
             "latitude": float(latitude),
             "longitude": float(longitude),
@@ -2224,7 +2224,7 @@ def send_contact():
 
         url = f"{WAHA_API_URL}/api/sendContactVcard"
         payload = {
-            "session": "corpal",
+            "session": inst,
             "chatId": f"{number}@c.us",
             "contacts": [
                 {
