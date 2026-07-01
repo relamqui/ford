@@ -1030,6 +1030,17 @@ def add_bot_tag():
     else:
         print(f"[BOT/TAGS] Contato já possui atendente: {contact.assigned_name} (id={contact.assigned_to}), pulando distribuição.")
     # --- Fim da Lógica ---
+    
+    # --- Garante que a tag do email do atendente esteja sempre presente ---
+    atendente_email = None
+    if contact.assigned_to:
+        u = User.query.get(contact.assigned_to)
+        if u and u.email:
+            atendente_email = u.email
+            # Se a tag com o email cru não estiver presente, adiciona
+            if atendente_email not in current_tags:
+                current_tags.append(atendente_email)
+                added = True
         
     if added:
         contact.tags = current_tags
@@ -1057,12 +1068,7 @@ def add_bot_tag():
             socketio.emit('chat_assignment', assign_data, room='admin')
     else:
         print(f"[BOT/TAGS] Nenhuma tag alterada (filial={filial}, setor={setor}, tag={custom_tag})")
-    atendente_email = None
-    if contact.assigned_to:
-        u = User.query.get(contact.assigned_to)
-        if u and u.email:
-            atendente_email = u.email
-
+        
     return jsonify({'success': True, 'contact_id': contact.id, 'tags': contact.tags, 'atendente_email': atendente_email}), 200
 
 # ─── Webhooks WAHA API ────────────────────────────────────────────────────────────
