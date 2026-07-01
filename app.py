@@ -165,8 +165,6 @@ class AtendimentoChat(db_sql.Model):
     status = db_sql.Column(db_sql.String(50), nullable=True)
     atendente = db_sql.Column(db_sql.String(100), nullable=True)
     registro_time_chat = db_sql.Column(db_sql.Text, nullable=True)
-    ultimo_setor = db_sql.Column(db_sql.String(255), nullable=True)
-    ultimo_atendente = db_sql.Column(db_sql.String(255), nullable=True)
     # Campos para controle de alertas de tempo de espera
     alerta_20min_enviado = db_sql.Column(db_sql.Boolean, default=False, nullable=False, server_default='false')
     alerta_40min_enviado = db_sql.Column(db_sql.Boolean, default=False, nullable=False, server_default='false')
@@ -862,8 +860,8 @@ def add_bot_tag():
         ]
         
         if new_ftag in current_tags:
-            # Já tem a tag correta — não precisa alterar
-            print(f"[BOT/TAGS] Tag '{new_ftag}' já existe, nenhuma alteração necessária.")
+            # Tag de filial:setor já existe — mas ainda precisa verificar atribuição de atendente
+            print(f"[BOT/TAGS] Tag '{new_ftag}' já existe, verificando atribuição de atendente...")
         else:
             # Remove qualquer tag Filial:Setor antiga e adiciona a nova
             for old_tag in existing_filial_tags:
@@ -895,6 +893,7 @@ def add_bot_tag():
             query = query.filter(db_sql.func.lower(User.setor) == setor.lower())
             
         users_query = query.all()
+        print(f"[BOT/TAGS] Atendentes encontrados para filial='{filial}' setor='{setor}': {[u.name for u in users_query]}")
         
         if users_query:
             selected_user = None
@@ -903,6 +902,7 @@ def add_bot_tag():
             # Descobre qual atendente tem o menor número de chats no momento
             for u in users_query:
                 chat_count = Contact.query.filter_by(assigned_to=u.id).count()
+                print(f"[BOT/TAGS] Atendente {u.name} tem {chat_count} chats ativos")
                 if chat_count < min_chats:
                     min_chats = chat_count
                     selected_user = u
@@ -914,14 +914,46 @@ def add_bot_tag():
                 # Remove a tag BOT caso exista, pois o chat já foi atribuído
                 current_tags = [t for t in current_tags if isinstance(t, str) and t.upper() != 'BOT']
                 
-                # Adiciona a tag de identificação do Atendente (sempre em minúsculo para consistência)
-                at_tag = (selected_user.email or '').lower()
-                if at_tag not in [t.lower() if isinstance(t, str) else t for t in current_tags]:
-                    current_tags.append(at_tag)
-                
+                # Adiciona tag no formato padrão do sistema: "Atendente: email"
+                at_tag = f"Atendente: {selected_user.email or selected_user.name}"
+                # Remove qualquer tag de atendente anterior e adiciona a nova
+                current_tags = [t for t in current_tags if not (isinstance(t, str) and t.lower().startswith('atendente:'))]
+                current_tags.append(at_tag)
                 added = True
-                print(f"[BOT/TAGS] Auto-atribuído {contact.id} para {selected_user.name} ({min_chats} chats ativos)")
-                track_sla_event(phone, atendente=selected_user.name, event_type='ASSIGNED')
+                print(f"[BOT/TAGS] Auto-atribuído {contact.id} para {selected_user.name} ({min_chats} chats ativos). Tag: '{at_tag}'")
+                
+                # Adiciona tag de filial:setor do atendente se não existir
+                if selected_user.filial and selected_user.setor:
+                    fst_tag = f"{selected_user.filial}:{selected_user.setor}"
+                    if fst_tag not in current_tags:
+                        # Remove filial:setor antiga se houver
+                        current_tags = [t for t in current_tags if not (isinstance(t, str) and ':' in t and not t.lower().startswith('atendente:'))]
+                        current_tags.append(fst_tag)
+                
+                
+                # Atualiza AtendimentoChat para o monitor de tempo de espera
+                try:
+                    agora_iso = get_now().isoformat()
+                    atend_rec = AtendimentoChat.query.filter_by(numero=phone).first()
+                    if atend_rec:
+                        atend_rec.atendente = selected_user.name
+                        atend_rec.status = 'atendente'
+                        atend_rec.registro_time_chat = agora_iso
+                        atend_rec.atendente_desde = agora_iso
+                    else:
+                        atend_rec = AtendimentoChat(
+                            numero=phone, status='atendente',
+                            atendente=selected_user.name,
+                            registro_time_chat=agora_iso,
+                            atendente_desde=agora_iso
+                        )
+                        db_sql.session.add(atend_rec)
+                except Exception as e_at:
+                    print(f"[BOT/TAGS] Erro ao atualizar AtendimentoChat: {e_at}")
+        else:
+            print(f"[BOT/TAGS] AVISO: Nenhum atendente encontrado com filial='{filial}' setor='{setor}'. Verifique o cadastro dos usuários.")
+    else:
+        print(f"[BOT/TAGS] Contato já possui atendente: {contact.assigned_name} (id={contact.assigned_to}), pulando distribuição.")
     # --- Fim da Lógica ---
         
     if added:
@@ -1563,11 +1595,10 @@ def auto_assign_chat_to_sender(contact, user_data):
     if atend:
         atend.atendente = user_email
         atend.status = 'atendente'
-        atend.ultimo_atendente = user_email
         atend.registro_time_chat = agora_iso
         atend.atendente_desde = agora_iso
     else:
-        atend = AtendimentoChat(numero=contact.phone, status='atendente', atendente=user_email, ultimo_atendente=user_email, registro_time_chat=agora_iso, atendente_desde=agora_iso)
+        atend = AtendimentoChat(numero=contact.phone, status='atendente', atendente=user_email, registro_time_chat=agora_iso, atendente_desde=agora_iso)
         db_sql.session.add(atend)
 
     # Dispara evento socket para atualizar interface
@@ -2419,9 +2450,9 @@ def wait_time_monitor_loop():
                         nome_cliente = contact_obj.name if contact_obj else reg.numero
                         instance_obj = contact_obj.instance if contact_obj else None
 
-                        # Busca filial e setor: tenta pelo atendente primeiro, depois pelo ultimo_setor
+                        # Busca filial e setor: tenta pelo atendente primeiro
                         filial_nome = None
-                        setor_nome = reg.ultimo_setor  # fallback: setor de destino da transferência
+                        setor_nome = None
                         if contact_obj and contact_obj.assigned_to:
                             atend_user = User.query.get(contact_obj.assigned_to)
                             if atend_user:
@@ -3021,11 +3052,9 @@ def webhook():
                             if atend:
                                 atend.atendente = att_user.name
                                 atend.status = 'atendente'
-                                atend.ultimo_atendente = att_user.name
-                                atend.registro_time_chat = agora_iso
                                 atend.atendente_desde = agora_iso
                             else:
-                                atend = AtendimentoChat(numero=phone, status='atendente', atendente=att_user.name, ultimo_atendente=att_user.name, registro_time_chat=agora_iso, atendente_desde=agora_iso)
+                                atend = AtendimentoChat(numero=phone, status='atendente', atendente=att_user.name, registro_time_chat=agora_iso, atendente_desde=agora_iso)
                                 db_sql.session.add(atend)
 
             db_sql.session.commit()
@@ -3330,7 +3359,6 @@ def create_contact():
             status_anterior = atend_chat.status
             atend_chat.atendente = user.name
             atend_chat.status = 'atendente'
-            atend_chat.ultimo_atendente = user.name
             atend_chat.registro_time_chat = agora_iso
             if status_anterior != 'atendente':
                 atend_chat.atendente_desde = agora_iso
@@ -3341,7 +3369,6 @@ def create_contact():
                 numero=contact.phone,
                 status='atendente',
                 atendente=user.name,
-                ultimo_atendente=user.name,
                 registro_time_chat=agora_iso,
                 atendente_desde=agora_iso,
                 alerta_20min_enviado=False,
@@ -3580,7 +3607,6 @@ def assign_chat(id):
             status_anterior = atend_chat.status
             atend_chat.atendente = user.name
             atend_chat.status = 'atendente'
-            atend_chat.ultimo_atendente = user.name
             atend_chat.registro_time_chat = agora_iso
             # Só reseta o timer de espera se estava em outro status (ex: bot)
             if status_anterior != 'atendente':
@@ -3592,7 +3618,6 @@ def assign_chat(id):
                 numero=contact.phone,
                 status='atendente',
                 atendente=user.name,
-                ultimo_atendente=user.name,
                 registro_time_chat=agora_iso,
                 atendente_desde=agora_iso,
                 alerta_20min_enviado=False,
@@ -3995,7 +4020,6 @@ def chat_transfer():
             atend_chat_tr.atendente_desde = agora_tr_iso  # timer reinicia agora
             atend_chat_tr.alerta_20min_enviado = False
             atend_chat_tr.alerta_40min_enviado = False
-            atend_chat_tr.ultimo_setor = setor       # registra setor de destino
             db_sql.session.commit()
             print(f"[TRANSFER] Timer de espera reiniciado para {contact.phone} → {filial}/{setor}")
     except Exception as e_tr:
