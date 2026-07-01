@@ -950,16 +950,36 @@ def add_bot_tag():
         
         if users_query:
             selected_user = None
-            min_chats = float('inf')
             
-            # Descobre qual atendente tem o menor número de chats no momento
-            for u in users_query:
-                chat_count = Contact.query.filter_by(assigned_to=u.id).count()
-                print(f"[BOT/TAGS] Atendente {u.name} tem {chat_count} chats ativos")
-                if chat_count < min_chats:
-                    min_chats = chat_count
-                    selected_user = u
-                    
+            # Ordena a lista de usuários para garantir a sequência fixa (pelo ID)
+            users_query.sort(key=lambda u: u.id)
+            
+            # Identificador único para a fila baseada na filial e setor
+            queue_key = f"last_assigned_bot_fila_{filial}_{setor}"
+            last_assigned_setting = Setting.query.get(queue_key)
+            last_assigned_id = int(last_assigned_setting.value) if last_assigned_setting and last_assigned_setting.value.isdigit() else None
+            
+            if not last_assigned_id:
+                selected_user = users_query[0]
+            else:
+                # Encontra o índice do último usuário atribuído
+                last_idx = -1
+                for i, u in enumerate(users_query):
+                    if u.id == last_assigned_id:
+                        last_idx = i
+                        break
+                
+                # Pega o próximo. Se for o último ou não achar, volta para o primeiro (0)
+                next_idx = (last_idx + 1) % len(users_query)
+                selected_user = users_query[next_idx]
+                
+            # Atualiza o ID do último atribuído na configuração global
+            if not last_assigned_setting:
+                last_assigned_setting = Setting(key=queue_key, value=str(selected_user.id))
+                db_sql.session.add(last_assigned_setting)
+            else:
+                last_assigned_setting.value = str(selected_user.id)
+                
             if selected_user:
                 contact.assigned_to = selected_user.id
                 contact.assigned_name = selected_user.name
@@ -975,7 +995,7 @@ def add_bot_tag():
                 if selected_user.email and selected_user.email not in current_tags:
                     current_tags.append(selected_user.email)
                 added = True
-                print(f"[BOT/TAGS] Auto-atribuído {contact.id} para {selected_user.name} ({min_chats} chats ativos). Tag: '{at_tag}'")
+                print(f"[BOT/TAGS] Auto-atribuído {contact.id} para {selected_user.name} (Atribuição Sequencial). Tag: '{at_tag}'")
                 
                 # Adiciona tag de filial:setor do atendente se não existir
                 if selected_user.filial and selected_user.setor:
