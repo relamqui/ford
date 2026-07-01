@@ -808,6 +808,7 @@ def add_bot_tag():
     filial = data.get('filial')
     setor = data.get('setor')
     custom_tag = data.get('tag')
+    nome_atendente = data.get('atendente')
     
     if not phone or not inst:
         return jsonify({'error': 'phone e instance são obrigatórios'}), 400
@@ -880,6 +881,55 @@ def add_bot_tag():
     if custom_tag and custom_tag not in current_tags:
         current_tags.append(custom_tag)
         added = True
+        
+    # --- Atribuição Específica de Atendente ---
+    if not contact.assigned_to:
+        atendente_user = None
+        
+        # 1. Tenta achar o atendente pelo e-mail (usando o valor da tag)
+        if custom_tag:
+            atendente_user = User.query.filter(db_sql.func.lower(User.email) == str(custom_tag).lower().strip()).first()
+            
+        # 2. Se não achou pelo e-mail, tenta achar pelo nome (campo atendente)
+        if not atendente_user and nome_atendente:
+            atendente_user = User.query.filter(db_sql.func.lower(User.name) == str(nome_atendente).lower().strip()).first()
+            
+        if atendente_user:
+            contact.assigned_to = atendente_user.id
+            contact.assigned_name = atendente_user.name
+            
+            # Remove a tag BOT caso exista
+            current_tags = [t for t in current_tags if isinstance(t, str) and t.upper() != 'BOT']
+            
+            # Adiciona tag no formato padrão do sistema: "Atendente: email"
+            at_tag = f"Atendente: {atendente_user.email or atendente_user.name}"
+            current_tags = [t for t in current_tags if not (isinstance(t, str) and t.lower().startswith('atendente:'))]
+            current_tags.append(at_tag)
+            added = True
+            
+            print(f"[BOT/TAGS] Atribuído especificamente para {atendente_user.name}. Tag: '{at_tag}'")
+            
+            # Atualiza AtendimentoChat
+            try:
+                agora_iso = get_now().isoformat()
+                atend_rec = AtendimentoChat.query.filter_by(numero=phone).first()
+                if atend_rec:
+                    atend_rec.atendente = atendente_user.name
+                    atend_rec.status = 'atendente'
+                    atend_rec.registro_time_chat = agora_iso
+                    atend_rec.atendente_desde = agora_iso
+                else:
+                    atend_rec = AtendimentoChat(
+                        numero=phone, status='atendente',
+                        atendente=atendente_user.name,
+                        registro_time_chat=agora_iso,
+                        atendente_desde=agora_iso
+                    )
+                    db_sql.session.add(atend_rec)
+            except Exception as e_at:
+                print(f"[BOT/TAGS] Erro ao atualizar AtendimentoChat: {e_at}")
+        else:
+            print(f"[BOT/TAGS] AVISO: Atendente '{nome_atendente}' não encontrado na base para atribuição específica.")
         
     # --- Início da Lógica de Distribuição Igualitária (Round-Robin) ---
     if not contact.assigned_to:
