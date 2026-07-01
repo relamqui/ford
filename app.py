@@ -796,19 +796,19 @@ def health():
         'waha_url': WAHA_API_URL
     })
 
-@app.route('/api/bot/tags', methods=['POST'])
+@app.route('/api/bot/tags', methods=['GET', 'POST'])
 def add_bot_tag():
     """Rota para o N8N (ou outro bot) adicionar etiquetas via API"""
-    data = request.json
+    data = request.json if request.is_json else request.args
     if not data:
-        return jsonify({'error': 'Body vazio'}), 400
+        return jsonify({'error': 'Body vazio ou sem parâmetros'}), 400
         
     phone = data.get('phone')
     inst = data.get('instance')
     filial = data.get('filial')
     setor = data.get('setor')
     custom_tag = data.get('tag')
-    nome_atendente = data.get('atendente')
+    nome_atendente = data.get('atendente') or data.get('nome')
     
     if not phone or not inst:
         return jsonify({'error': 'phone e instance são obrigatórios'}), 400
@@ -886,13 +886,14 @@ def add_bot_tag():
     if not contact.assigned_to:
         atendente_user = None
         
-        # 1. Tenta achar o atendente pelo e-mail (usando o valor da tag)
-        if custom_tag:
-            atendente_user = User.query.filter(db_sql.func.lower(User.email) == str(custom_tag).lower().strip()).first()
-            
-        # 2. Se não achou pelo e-mail, tenta achar pelo nome (campo atendente)
-        if not atendente_user and nome_atendente:
-            atendente_user = User.query.filter(db_sql.func.lower(User.name) == str(nome_atendente).lower().strip()).first()
+        if not (nome_atendente and str(nome_atendente).lower().strip() == 'fila'):
+            # 1. Tenta achar o atendente pelo e-mail (usando o valor da tag)
+            if custom_tag:
+                atendente_user = User.query.filter(db_sql.func.lower(User.email) == str(custom_tag).lower().strip()).first()
+                
+            # 2. Se não achou pelo e-mail, tenta achar pelo nome (campo atendente)
+            if not atendente_user and nome_atendente:
+                atendente_user = User.query.filter(db_sql.func.lower(User.name) == str(nome_atendente).lower().strip()).first()
             
         if atendente_user:
             contact.assigned_to = atendente_user.id
@@ -905,6 +906,8 @@ def add_bot_tag():
             at_tag = f"Atendente: {atendente_user.email or atendente_user.name}"
             current_tags = [t for t in current_tags if not (isinstance(t, str) and t.lower().startswith('atendente:'))]
             current_tags.append(at_tag)
+            if atendente_user.email and atendente_user.email not in current_tags:
+                current_tags.append(atendente_user.email)
             added = True
             
             print(f"[BOT/TAGS] Atribuído especificamente para {atendente_user.name}. Tag: '{at_tag}'")
@@ -969,6 +972,8 @@ def add_bot_tag():
                 # Remove qualquer tag de atendente anterior e adiciona a nova
                 current_tags = [t for t in current_tags if not (isinstance(t, str) and t.lower().startswith('atendente:'))]
                 current_tags.append(at_tag)
+                if selected_user.email and selected_user.email not in current_tags:
+                    current_tags.append(selected_user.email)
                 added = True
                 print(f"[BOT/TAGS] Auto-atribuído {contact.id} para {selected_user.name} ({min_chats} chats ativos). Tag: '{at_tag}'")
                 
@@ -1032,8 +1037,13 @@ def add_bot_tag():
             socketio.emit('chat_assignment', assign_data, room='admin')
     else:
         print(f"[BOT/TAGS] Nenhuma tag alterada (filial={filial}, setor={setor}, tag={custom_tag})")
-        
-    return jsonify({'success': True, 'contact_id': contact.id, 'tags': contact.tags}), 200
+    atendente_email = None
+    if contact.assigned_to:
+        u = User.query.get(contact.assigned_to)
+        if u and u.email:
+            atendente_email = u.email
+
+    return jsonify({'success': True, 'contact_id': contact.id, 'tags': contact.tags, 'atendente_email': atendente_email}), 200
 
 # ─── Webhooks WAHA API ────────────────────────────────────────────────────────────
 
