@@ -934,8 +934,16 @@ def add_bot_tag():
         else:
             print(f"[BOT/TAGS] AVISO: Atendente '{nome_atendente}' não encontrado na base para atribuição específica.")
         
-    # --- Início da Lógica de Distribuição Igualitária (Round-Robin) ---
-    if not contact.assigned_to:
+    # --- Início da Lógica de Distribuição Sequencial (Round-Robin) ---
+    # Se nome=fila, força redistribuição mesmo que o contato já tenha atendente
+    forcar_fila = nome_atendente and str(nome_atendente).lower().strip() == 'fila'
+    if not contact.assigned_to or forcar_fila:
+        # Reseta atendente anterior se veio como fila
+        if forcar_fila and contact.assigned_to:
+            print(f"[BOT/TAGS] Modo FILA: redistribuindo contato que já estava com '{contact.assigned_name}'")
+            contact.assigned_to = None
+            contact.assigned_name = None
+        
         # Busca atendentes (role='user')
         query = User.query.filter(User.role == 'user')
         
