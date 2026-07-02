@@ -188,6 +188,16 @@ class SlaHistory(db_sql.Model):
     finalizado_em = db_sql.Column(db_sql.Text, nullable=True)
     criado_em = db_sql.Column(db_sql.Text, nullable=False)
 
+class NpsVoto(db_sql.Model):
+    __tablename__ = 'nps_votos'
+    id = db_sql.Column(db_sql.Integer, primary_key=True, autoincrement=True)
+    numero = db_sql.Column(db_sql.String(50), nullable=True)
+    voto = db_sql.Column(db_sql.String(50), nullable=False)  # ex: '5 ⭐⭐⭐⭐⭐'
+    atendente = db_sql.Column(db_sql.String(150), nullable=True)
+    filial = db_sql.Column(db_sql.String(150), nullable=True)
+    setor = db_sql.Column(db_sql.String(150), nullable=True)
+    data_voto = db_sql.Column(db_sql.Text, nullable=True)  # ISO datetime string
+
 class Entrega(db_sql.Model):
     id = db_sql.Column(db_sql.Integer, primary_key=True)
     nome_peca = db_sql.Column(db_sql.String(150), nullable=False)
@@ -2544,9 +2554,9 @@ def wait_time_monitor_loop():
                         nome_cliente = contact_obj.name if contact_obj else reg.numero
                         instance_obj = contact_obj.instance if contact_obj else None
 
-                        # Busca filial e setor: tenta pelo atendente primeiro
+                        # Busca filial e setor: tenta pelo atendente primeiro, depois pelo ultimo_setor
                         filial_nome = None
-                        setor_nome = None
+                        setor_nome = reg.ultimo_setor  # fallback: setor de destino da transferência
                         if contact_obj and contact_obj.assigned_to:
                             atend_user = User.query.get(contact_obj.assigned_to)
                             if atend_user:
@@ -3805,7 +3815,7 @@ def release_chat(id):
             "setor": _setor_r,
             "timestamp": get_now().isoformat()
         }
-        requests.post("https://n8n-n8n.ioms5g.easypanel.host/webhook/acionar-nps", json=nps_payload, timeout=5)
+        requests.post("https://n8n-n8n.ioms5g.easypanel.host/webhook/ford-acionar-nps", json=nps_payload, timeout=5)
     except Exception as nps_e:
         print(f"Erro ao disparar webhook NPS: {nps_e}")
 
@@ -4614,6 +4624,42 @@ def test_alerta_espera():
         db_sql.session.rollback()
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/nps/receber-voto', methods=['POST'])
+def nps_receber_voto():
+    """Recebe voto NPS do N8N (webhook ford-nps) e grava na tabela nps_votos.
+    Body JSON esperado:
+      { "numero": "5535...", "voto": "5 ⭐⭐⭐⭐⭐",
+        "atendente": "Nome", "filial": "Ford X", "setor": "Vendas" }
+    """
+    try:
+        data = request.json or {}
+        numero   = data.get('numero') or data.get('phone') or data.get('telefone')
+        voto     = data.get('voto') or data.get('nota') or data.get('resposta')
+        atendente = data.get('atendente')
+        filial   = data.get('filial')
+        setor    = data.get('setor')
+
+        if not voto:
+            return jsonify({'success': False, 'error': 'Campo voto é obrigatório'}), 400
+
+        registro = NpsVoto(
+            numero=numero,
+            voto=str(voto),
+            atendente=atendente,
+            filial=filial,
+            setor=setor,
+            data_voto=get_now().isoformat()
+        )
+        db_sql.session.add(registro)
+        db_sql.session.commit()
+        print(f"[NPS] Voto registrado: numero={numero}, voto={voto}, atendente={atendente}")
+        return jsonify({'success': True, 'id': registro.id}), 200
+    except Exception as e:
+        db_sql.session.rollback()
+        import traceback
+        return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
+
+
 @app.route('/api/debug/last-webhook', methods=['GET', 'POST'])
 def debug_webhook():
     """Dev-only: POST salva payload, GET retorna o ultimo."""
@@ -4671,6 +4717,603 @@ def report_sla():
         })
         
     return jsonify({'success': True, 'data': data}), 200
+
+
+@app.route('/api/reports/ranking', methods=['GET'])
+@auth_required
+@admin_required
+def report_ranking():
+    try:
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        query = Message.query
+        if start_date:
+            try:
+                start_ts = int(datetime.datetime.strptime(start_date, '%Y-%m-%d').timestamp())
+                query = query.filter(Message.timestamp >= start_ts)
+            except Exception:
+                pass
+        if end_date:
+            try:
+                end_ts = int(datetime.datetime.strptime(end_date + ' 23:59:59', '%Y-%m-%d %H:%M:%S').timestamp())
+                query = query.filter(Message.timestamp <= end_ts)
+            except Exception:
+                pass
+            
+        messages = query.order_by(Message.contact_id, Message.timestamp).all()
+        
+        attendant_stats = {} 
+        last_in_time = None
+        current_contact = None
+        
+        for msg in messages:
+            if current_contact != msg.contact_id:
+                current_contact = msg.contact_id
+                last_in_time = None
+                
+            if msg.type == 'in':
+                last_in_time = msg.timestamp
+            elif msg.type == 'out':
+                if msg.sender_id:
+                    if msg.sender_id not in attendant_stats:
+                        attendant_stats[msg.sender_id] = {'total_msgs': 0, 'conversations': {}}
+                    
+                    attendant_stats[msg.sender_id]['total_msgs'] += 1
+                    
+                    if last_in_time is not None:
+                        resp_time = msg.timestamp - last_in_time
+                        if resp_time < 0: resp_time = 0
+                        
+                        if msg.contact_id not in attendant_stats[msg.sender_id]['conversations']:
+                            attendant_stats[msg.sender_id]['conversations'][msg.contact_id] = []
+                        
+                        attendant_stats[msg.sender_id]['conversations'][msg.contact_id].append(resp_time)
+                    
+                last_in_time = None 
+                
+        ranking = []
+        users = {u.id: u for u in User.query.all()}
+        for uid, stats in attendant_stats.items():
+            user = users.get(uid)
+            if user and stats['total_msgs'] > 0:
+                conv_averages = []
+                for contact_id, times in stats['conversations'].items():
+                    if len(times) > 0:
+                        conv_avg = sum(times) / len(times)
+                        conv_averages.append(conv_avg)
+                
+                if len(conv_averages) > 0:
+                    final_avg_time = sum(conv_averages) / len(conv_averages)
+                else:
+                    final_avg_time = 0
+                
+                ranking.append({
+                    'id': user.id,
+                    'name': user.name,
+                    'email': user.email,
+                    'avg_time': final_avg_time,
+                    'count': stats['total_msgs']
+                })
+                
+        ranking.sort(key=lambda x: (-x['count'], x['avg_time']))
+        return jsonify({'success': True, 'data': ranking}), 200
+    except Exception as e:
+        import traceback
+        return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
+
+
+@app.route('/api/reports/nps-filiais', methods=['GET'])
+@auth_required
+@admin_or_gestor_required
+def report_nps_filiais():
+    """Retorna ranking NPS por Filial e Setor."""
+    try:
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+
+        filters = ""
+        params = {}
+        if start_date:
+            filters += " AND data_voto >= :start_date"
+            params['start_date'] = start_date
+        if end_date:
+            filters += " AND data_voto <= :end_date"
+            params['end_date'] = end_date + ' 23:59:59'
+
+        sql = db_sql.text(f"""
+            SELECT filial, setor, atendente,
+                   COUNT(*) as total_votos,
+                   AVG(CAST(SPLIT_PART(voto, ' ', 1) AS INTEGER)) as media_nota,
+                   SUM(CASE WHEN CAST(SPLIT_PART(voto, ' ', 1) AS INTEGER) = 5 THEN 1 ELSE 0 END) as promotores,
+                   SUM(CASE WHEN CAST(SPLIT_PART(voto, ' ', 1) AS INTEGER) = 4 THEN 1 ELSE 0 END) as neutros,
+                   SUM(CASE WHEN CAST(SPLIT_PART(voto, ' ', 1) AS INTEGER) <= 3 THEN 1 ELSE 0 END) as detratores
+            FROM nps_votos
+            WHERE 1=1 {filters}
+            GROUP BY filial, setor, atendente
+            ORDER BY filial, setor, media_nota DESC
+        """)
+        rows = db_sql.session.execute(sql, params).fetchall()
+
+        # Organiza por filial > setor
+        filiais = {}
+        for row in rows:
+            filial = row[0] or 'Sem Filial'
+            setor = row[1] or 'Sem Setor'
+            total = row[3] or 0
+            promotores = row[5] or 0
+            detratores = row[7] or 0
+            nps = round(((promotores - detratores) / total) * 100) if total > 0 else 0
+
+            if filial not in filiais:
+                filiais[filial] = {}
+            if setor not in filiais[filial]:
+                filiais[filial][setor] = {
+                    'total_votos': 0, 'media_nota': 0,
+                    'promotores': 0, 'neutros': 0, 'detratores': 0,
+                    'notas_sum': 0, 'nps': 0
+                }
+
+            s = filiais[filial][setor]
+            s['total_votos'] += total
+            s['notas_sum'] += (row[4] or 0) * total
+            s['promotores'] += promotores
+            s['neutros'] += (row[6] or 0)
+            s['detratores'] += detratores
+
+        # Calcula médias finais por setor
+        result = []
+        for filial, setores in filiais.items():
+            setores_list = []
+            for setor, s in setores.items():
+                total = s['total_votos']
+                media = round(s['notas_sum'] / total, 1) if total > 0 else 0
+                nps_score = round(((s['promotores'] - s['detratores']) / total) * 100) if total > 0 else 0
+                setores_list.append({
+                    'setor': setor,
+                    'total_votos': total,
+                    'media_nota': media,
+                    'promotores': s['promotores'],
+                    'neutros': s['neutros'],
+                    'detratores': s['detratores'],
+                    'nps_score': nps_score
+                })
+            setores_list.sort(key=lambda x: -x['nps_score'])
+            result.append({'filial': filial, 'setores': setores_list})
+        result.sort(key=lambda x: x['filial'])
+        return jsonify({'success': True, 'data': result}), 200
+    except Exception as e:
+        import traceback
+        return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
+
+
+@app.route('/api/reports/nps-atendentes', methods=['GET'])
+@auth_required
+@admin_or_gestor_required
+def report_nps_atendentes():
+    """Retorna ranking NPS por Atendente."""
+    try:
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+
+        filters = ""
+        params = {}
+        if start_date:
+            filters += " AND data_voto >= :start_date"
+            params['start_date'] = start_date
+        if end_date:
+            filters += " AND data_voto <= :end_date"
+            params['end_date'] = end_date + ' 23:59:59'
+
+        sql = db_sql.text(f"""
+            SELECT atendente, filial, setor,
+                   COUNT(*) as total_votos,
+                   AVG(CAST(SPLIT_PART(voto, ' ', 1) AS INTEGER)) as media_nota,
+                   SUM(CASE WHEN CAST(SPLIT_PART(voto, ' ', 1) AS INTEGER) = 5 THEN 1 ELSE 0 END) as promotores,
+                   SUM(CASE WHEN CAST(SPLIT_PART(voto, ' ', 1) AS INTEGER) = 4 THEN 1 ELSE 0 END) as neutros,
+                   SUM(CASE WHEN CAST(SPLIT_PART(voto, ' ', 1) AS INTEGER) <= 3 THEN 1 ELSE 0 END) as detratores
+            FROM nps_votos
+            WHERE atendente IS NOT NULL AND atendente != '' {filters}
+            GROUP BY atendente, filial, setor
+            ORDER BY media_nota DESC
+        """)
+        rows = db_sql.session.execute(sql, params).fetchall()
+
+        import math
+        result = []
+        for row in rows:
+            total = row[3] or 0
+            promotores = row[5] or 0
+            detratores = row[7] or 0
+            nps_score = round(((promotores - detratores) / total) * 100) if total > 0 else 0
+            # Pontuação combinada: equilibra NPS com volume de votos
+            combined_score = nps_score * math.log(total + 1)
+            result.append({
+                'atendente': row[0] or '-',
+                'filial': row[1] or '-',
+                'setor': row[2] or '-',
+                'total_votos': total,
+                'media_nota': round(row[4] or 0, 1),
+                'promotores': promotores,
+                'neutros': row[6] or 0,
+                'detratores': detratores,
+                'nps_score': nps_score,
+                'combined_score': round(combined_score, 1)
+            })
+        # Ordena por pontuação combinada (NPS × log(votos+1))
+        result.sort(key=lambda x: -x['combined_score'])
+        return jsonify({'success': True, 'data': result}), 200
+    except Exception as e:
+        import traceback
+        return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
+
+
+def _segundos_espera_sql():
+    return "EXTRACT(EPOCH FROM (atendido - inicio))"
+
+def _segundos_chat_sql():
+    return "EXTRACT(EPOCH FROM (finalizado - atendido))"
+
+
+@app.route('/api/reports/tempo-espera-atendentes', methods=['GET'])
+@auth_required
+@admin_or_gestor_required
+def report_tempo_espera_atendentes():
+    """Ranking de atendentes por eficiência de tempo de espera."""
+    try:
+        import math
+        start_date = request.args.get('start_date')
+        end_date   = request.args.get('end_date')
+        filters = "AND atendido IS NOT NULL AND nome_atendente IS NOT NULL AND nome_atendente != ''"
+        params  = {}
+        if start_date:
+            filters += " AND inicio >= :start_date"
+            params['start_date'] = start_date
+        if end_date:
+            filters += " AND inicio <= :end_date"
+            params['end_date'] = end_date + ' 23:59:59'
+        sql = db_sql.text(f"""
+            SELECT nome_atendente, setor_filial, COUNT(*) as total_atendidos,
+                   AVG({_segundos_espera_sql()}) as avg_espera_seg,
+                   AVG(CASE WHEN finalizado IS NOT NULL THEN {_segundos_chat_sql()} END) as avg_chat_seg,
+                   MIN({_segundos_espera_sql()}) as min_espera_seg,
+                   MAX({_segundos_espera_sql()}) as max_espera_seg
+            FROM tempo_espera WHERE 1=1 {filters}
+            GROUP BY nome_atendente, setor_filial
+        """)
+        rows = db_sql.session.execute(sql, params).fetchall()
+        result = []
+        for row in rows:
+            nome       = row[0] or '-'
+            sf         = row[1] or '-'
+            total      = int(row[2] or 0)
+            avg_espera = float(row[3] or 0)
+            avg_chat   = float(row[4] or 0)
+            total_med  = avg_espera + avg_chat
+            score      = math.log(total + 1) * 10000 / (total_med + 1) if total > 0 else 0
+            partes     = sf.split(':', 1) if ':' in sf else [sf, '-']
+            setor      = partes[0].strip()
+            filial     = partes[1].strip() if len(partes) > 1 else '-'
+            result.append({
+                'atendente': nome, 'setor_filial': sf, 'setor': setor, 'filial': filial,
+                'total_atendidos': total,
+                'avg_espera_seg': round(avg_espera, 0),
+                'avg_chat_seg':   round(avg_chat, 0),
+                'avg_total_seg':  round(total_med, 0),
+                'min_espera_seg': round(float(row[5] or 0), 0),
+                'max_espera_seg': round(float(row[6] or 0), 0),
+                'score': round(score, 1)
+            })
+        result.sort(key=lambda x: -x['score'])
+        return jsonify({'success': True, 'data': result}), 200
+    except Exception as e:
+        import traceback
+        return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
+
+
+@app.route('/api/reports/tempo-espera-filiais', methods=['GET'])
+@auth_required
+@admin_or_gestor_required
+def report_tempo_espera_filiais():
+    """Ranking de filiais/setores por eficiência de tempo de espera."""
+    try:
+        import math
+        start_date = request.args.get('start_date')
+        end_date   = request.args.get('end_date')
+        filters = "AND atendido IS NOT NULL AND setor_filial IS NOT NULL AND setor_filial != ''"
+        params  = {}
+        if start_date:
+            filters += " AND inicio >= :start_date"
+            params['start_date'] = start_date
+        if end_date:
+            filters += " AND inicio <= :end_date"
+            params['end_date'] = end_date + ' 23:59:59'
+        sql = db_sql.text(f"""
+            SELECT setor_filial, COUNT(*) as total_atendidos,
+                   AVG({_segundos_espera_sql()}) as avg_espera_seg,
+                   AVG(CASE WHEN finalizado IS NOT NULL THEN {_segundos_chat_sql()} END) as avg_chat_seg
+            FROM tempo_espera WHERE 1=1 {filters}
+            GROUP BY setor_filial
+        """)
+        rows = db_sql.session.execute(sql, params).fetchall()
+        filiais = {}
+        for row in rows:
+            sf         = row[0] or '-'
+            total      = int(row[1] or 0)
+            avg_espera = float(row[2] or 0)
+            avg_chat   = float(row[3] or 0)
+            total_med  = avg_espera + avg_chat
+            score      = math.log(total + 1) * 10000 / (total_med + 1) if total > 0 else 0
+            partes     = sf.split(':', 1) if ':' in sf else [sf, '-']
+            setor      = partes[0].strip()
+            filial     = partes[1].strip() if len(partes) > 1 else '-'
+            if filial not in filiais:
+                filiais[filial] = []
+            filiais[filial].append({
+                'setor': setor, 'total_atendidos': total,
+                'avg_espera_seg': round(avg_espera, 0),
+                'avg_chat_seg':   round(avg_chat, 0),
+                'avg_total_seg':  round(total_med, 0),
+                'score': round(score, 1)
+            })
+        result = []
+        for filial, setores in filiais.items():
+            setores.sort(key=lambda x: -x['score'])
+            total_f    = sum(s['total_atendidos'] for s in setores)
+            avg_esp_f  = sum(s['avg_espera_seg'] * s['total_atendidos'] for s in setores) / total_f if total_f else 0
+            avg_chat_f = sum((s['avg_chat_seg'] or 0) * s['total_atendidos'] for s in setores) / total_f if total_f else 0
+            score_f    = math.log(total_f + 1) * 10000 / (avg_esp_f + avg_chat_f + 1) if total_f > 0 else 0
+            result.append({
+                'filial': filial, 'total_atendidos': total_f,
+                'avg_espera_seg': round(avg_esp_f, 0),
+                'avg_chat_seg':   round(avg_chat_f, 0),
+                'score': round(score_f, 1),
+                'setores': setores
+            })
+        result.sort(key=lambda x: -x['score'])
+        return jsonify({'success': True, 'data': result}), 200
+    except Exception as e:
+        import traceback
+        return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
+
+
+@app.route('/api/reports/volume-chats-filiais', methods=['GET'])
+@auth_required
+@admin_or_gestor_required
+def report_volume_chats_filiais():
+    """Volume de chats criados, fechados e abertos por filial/setor (categorizados por tags)."""
+    try:
+        filiais_objs = Filial.query.all()
+        valid_filiais = {f.name.lower().strip(): f.name.strip() for f in filiais_objs}
+        
+        def resolve_sf(sf_str):
+            if not sf_str or ':' not in sf_str:
+                return None, None
+            partes = sf_str.split(':', 1)
+            p0 = partes[0].strip()
+            p1 = partes[1].strip()
+            if not p0 or not p1 or p0 == '-' or p1 == '-' or p0.lower() == 'null' or p1.lower() == 'null':
+                return None, None
+            
+            if p0.lower() in valid_filiais:
+                return valid_filiais[p0.lower()], p1  # p0 = filial, p1 = setor
+            elif p1.lower() in valid_filiais:
+                return valid_filiais[p1.lower()], p0  # p1 = filial, p0 = setor
+            else:
+                return p0, p1  # Default assume p0 = filial
+
+        start_date = request.args.get('start_date')
+        end_date   = request.args.get('end_date')
+        
+        params = {}
+        date_filters = ""
+        if start_date and end_date:
+            params['start_date'] = start_date
+            params['end_date'] = end_date + ' 23:59:59'
+            date_filters = """
+                WHERE (inicio >= :start_date AND inicio <= :end_date)
+                   OR (finalizado >= :start_date AND finalizado <= :end_date)
+                   OR (finalizado IS NULL)
+            """
+        else:
+            date_filters = "WHERE 1=1"
+
+        sql = db_sql.text(f"""
+            SELECT setor_filial,
+                   SUM(CASE WHEN inicio >= :start_date AND inicio <= :end_date THEN 1 ELSE 0 END) as criados,
+                   SUM(CASE WHEN finalizado >= :start_date AND finalizado <= :end_date THEN 1 ELSE 0 END) as fechados
+            FROM tempo_espera
+            {date_filters}
+            GROUP BY setor_filial
+        """)
+        rows = db_sql.session.execute(sql, params).fetchall()
+
+        filiais = {}
+        for row in rows:
+            sf       = row[0] or '-'
+            if not sf or sf == '-': continue
+            criados  = int(row[1] or 0)
+            fechados = int(row[2] or 0)
+            
+            filial, setor = resolve_sf(sf)
+            if not filial or not setor:
+                continue
+            
+            if filial not in filiais:
+                filiais[filial] = {}
+            if setor not in filiais[filial]:
+                filiais[filial][setor] = {'criados': 0, 'fechados': 0, 'triagem': 0, 'espera': 0, 'atendimento': 0}
+            
+            filiais[filial][setor]['criados'] += criados
+            filiais[filial][setor]['fechados'] += fechados
+
+        # Fila de ESPERA (tempo_espera sem atendente)
+        sql_espera = db_sql.text("""
+            SELECT setor_filial, COUNT(*) as qtd
+            FROM tempo_espera
+            WHERE finalizado IS NULL AND atendido IS NULL
+            GROUP BY setor_filial
+        """)
+        espera_rows = db_sql.session.execute(sql_espera).fetchall()
+        for row in espera_rows:
+            sf = row[0] or '-'
+            if not sf or sf == '-': continue
+            qtd = int(row[1] or 0)
+            
+            filial, setor = resolve_sf(sf)
+            if not filial or not setor:
+                continue
+            
+            if filial not in filiais: filiais[filial] = {}
+            if setor not in filiais[filial]: filiais[filial][setor] = {'criados': 0, 'fechados': 0, 'triagem': 0, 'espera': 0, 'atendimento': 0}
+            filiais[filial][setor]['espera'] += qtd
+
+        # Fila de ATENDIMENTO (atendimentos_chat com status='atendente')
+        sql_atend = db_sql.text("""
+            SELECT ultimo_setor, COUNT(*) as qtd
+            FROM atendimentos_chat
+            WHERE status = 'atendente'
+            GROUP BY ultimo_setor
+        """)
+        atend_rows = db_sql.session.execute(sql_atend).fetchall()
+        for row in atend_rows:
+            sf = row[0] or '-'
+            if not sf or sf == '-': continue
+            qtd = int(row[1] or 0)
+            
+            filial, setor = resolve_sf(sf)
+            if not filial or not setor:
+                continue
+            
+            if filial not in filiais: filiais[filial] = {}
+            if setor not in filiais[filial]: filiais[filial][setor] = {'criados': 0, 'fechados': 0, 'triagem': 0, 'espera': 0, 'atendimento': 0}
+            filiais[filial][setor]['atendimento'] += qtd
+
+        result = []
+        for filial, setores_dict in filiais.items():
+            setores_list = []
+            for setor, stats in setores_dict.items():
+                setores_list.append({
+                    'setor': setor,
+                    'criados': stats['criados'],
+                    'fechados': stats['fechados'],
+                    'triagem': stats['triagem'],
+                    'espera': stats['espera'],
+                    'atendimento': stats['atendimento']
+                })
+            setores_list.sort(key=lambda x: -x['criados'])
+            result.append({
+                'filial': filial,
+                'criados': sum(s['criados'] for s in setores_list),
+                'fechados': sum(s['fechados'] for s in setores_list),
+                'triagem': sum(s['triagem'] for s in setores_list),
+                'espera': sum(s['espera'] for s in setores_list),
+                'atendimento': sum(s['atendimento'] for s in setores_list),
+                'setores': setores_list
+            })
+        result.sort(key=lambda x: -x['criados'])
+        return jsonify({'success': True, 'data': result}), 200
+    except Exception as e:
+        import traceback
+        return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
+
+
+@app.route('/api/reports/volume-chats-atendentes', methods=['GET'])
+@auth_required
+@admin_or_gestor_required
+def report_volume_chats_atendentes():
+    """Volume de chats criados, fechados e abertos por atendente."""
+    try:
+        start_date = request.args.get('start_date')
+        end_date   = request.args.get('end_date')
+        
+        params = {}
+        date_filters = ""
+        if start_date and end_date:
+            params['start_date'] = start_date
+            params['end_date'] = end_date + ' 23:59:59'
+            date_filters = """
+                AND ((inicio >= :start_date AND inicio <= :end_date)
+                   OR (finalizado >= :start_date AND finalizado <= :end_date)
+                   OR (finalizado IS NULL))
+            """
+        
+        sql = db_sql.text(f"""
+            SELECT nome_atendente, setor_filial,
+                   SUM(CASE WHEN inicio >= :start_date AND inicio <= :end_date THEN 1 ELSE 0 END) as criados,
+                   SUM(CASE WHEN finalizado >= :start_date AND finalizado <= :end_date THEN 1 ELSE 0 END) as fechados
+            FROM tempo_espera
+            WHERE nome_atendente IS NOT NULL AND nome_atendente != '' {date_filters}
+            GROUP BY nome_atendente, setor_filial
+        """)
+        rows = db_sql.session.execute(sql, params).fetchall()
+
+        users = User.query.all()
+        email_to_name = {u.email.lower().strip(): u.name.strip() for u in users if u.email and u.name}
+        name_to_user = {u.name.lower().strip(): u for u in users if u.name}
+
+        def normalize_atendente_nome(n):
+            n_str = str(n).strip()
+            if '@' in n_str:
+                n_lower = n_str.lower()
+                if n_lower in email_to_name:
+                    return email_to_name[n_lower]
+            return n_str
+
+        atendentes_map = {}
+        for row in rows:
+            nome    = normalize_atendente_nome(row[0] or '-')
+            criados = int(row[2] or 0)
+            
+            key = nome.lower()
+            if key not in atendentes_map:
+                atendentes_map[key] = {'nome': nome, 'criados': 0, 'fechados': 0, 'abertos': 0}
+            
+            atendentes_map[key]['criados'] += criados
+
+        # Atendimentos abertos e fechados usando atendimentos_chat
+        sql_abertos = db_sql.text("""
+            SELECT atendente, 
+                   SUM(CASE WHEN LOWER(status) = 'atendente' THEN 1 ELSE 0 END) as abertos,
+                   SUM(CASE WHEN LOWER(status) = 'bot' THEN 1 ELSE 0 END) as fechados
+            FROM atendimentos_chat
+            WHERE atendente IS NOT NULL AND atendente != ''
+            GROUP BY atendente
+        """)
+        abertos_rows = db_sql.session.execute(sql_abertos).fetchall()
+        for row in abertos_rows:
+            nome = normalize_atendente_nome(row[0] or '-')
+            qtd_abertos  = int(row[1] or 0)
+            qtd_fechados = int(row[2] or 0)
+            
+            key = nome.lower()
+            if key not in atendentes_map:
+                atendentes_map[key] = {'nome': nome, 'criados': 0, 'fechados': 0, 'abertos': 0}
+                
+            atendentes_map[key]['abertos']  = qtd_abertos
+            atendentes_map[key]['fechados'] = qtd_fechados
+
+        result = []
+        for key, data in atendentes_map.items():
+            user_obj = name_to_user.get(key)
+            filial = user_obj.filial if user_obj and user_obj.filial else '-'
+            setor  = user_obj.setor  if user_obj and user_obj.setor  else '-'
+            
+            result.append({
+                'atendente': data['nome'],
+                'filial': filial,
+                'setor': setor,
+                'criados': data['criados'],
+                'fechados': data['fechados'],
+                'abertos': data['abertos']
+            })
+            
+        result.sort(key=lambda x: (-x['abertos'], -x['criados'], -x['fechados']))
+        return jsonify({'success': True, 'data': result}), 200
+    except Exception as e:
+        import traceback
+        return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
+
 
 @app.route('/')
 def index_page():
