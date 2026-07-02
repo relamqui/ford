@@ -198,6 +198,16 @@ class NpsVoto(db_sql.Model):
     setor = db_sql.Column(db_sql.String(150), nullable=True)
     data_voto = db_sql.Column(db_sql.Text, nullable=True)  # ISO datetime string
 
+class TempoEspera(db_sql.Model):
+    __tablename__ = 'tempo_espera'
+    id = db_sql.Column(db_sql.Integer, primary_key=True, autoincrement=True)
+    numero_cliente = db_sql.Column(db_sql.String(50), nullable=False)
+    nome_atendente = db_sql.Column(db_sql.String(100), nullable=True)
+    setor_filial = db_sql.Column(db_sql.String(150), nullable=True)
+    inicio = db_sql.Column(db_sql.DateTime, nullable=False, default=get_now_sp)
+    atendido = db_sql.Column(db_sql.DateTime, nullable=True)
+    finalizado = db_sql.Column(db_sql.DateTime, nullable=True)
+
 class Entrega(db_sql.Model):
     id = db_sql.Column(db_sql.Integer, primary_key=True)
     nome_peca = db_sql.Column(db_sql.String(150), nullable=False)
@@ -1086,7 +1096,19 @@ def add_bot_tag():
             socketio.emit('chat_assignment', assign_data, room='admin')
     else:
         print(f"[BOT/TAGS] Nenhuma tag alterada (filial={filial}, setor={setor}, tag={custom_tag})")
-        
+
+    # Monitoramento de tempo de espera — sempre verifica, independente de tags terem mudado
+    try:
+        espera_aberta = TempoEspera.query.filter_by(numero_cliente=phone, atendido=None).first()
+        if not espera_aberta:
+            nova_espera = TempoEspera(numero_cliente=phone, inicio=get_now_sp())
+            db_sql.session.add(nova_espera)
+            db_sql.session.commit()
+            print(f"[TEMPO_ESPERA] Inicio registrado para {phone}")
+    except Exception as e_te:
+        db_sql.session.rollback()
+        print(f"[TEMPO_ESPERA] Erro ao registrar inicio: {e_te}")
+
     return jsonify({'success': True, 'contact_id': contact.id, 'tags': contact.tags, 'atendente_email': atendente_email}), 200
 
 # ─── Webhooks WAHA API ────────────────────────────────────────────────────────────
@@ -3734,6 +3756,26 @@ def assign_chat(id):
         db_sql.session.rollback()
         print(f"Erro ao atualizar atendimentos_chat (assign): {e_ac}")
     
+    # Atualiza o monitoramento de tempo de espera
+    try:
+        espera_aberta = TempoEspera.query.filter_by(numero_cliente=contact.phone, atendido=None).order_by(TempoEspera.id.desc()).first()
+        if espera_aberta:
+            espera_aberta.nome_atendente = user.name
+            _f = Filial.query.get(user.filial_id) if user.filial_id else None
+            _s = Setor.query.get(user.setor_id) if user.setor_id else None
+            _f_name = _f.name if _f else (user.filial or '')
+            _s_name = _s.name if _s else (user.setor or '')
+            if _s_name and _f_name:
+                espera_aberta.setor_filial = f"{_s_name}:{_f_name}"
+            elif _s_name or _f_name:
+                espera_aberta.setor_filial = _s_name or _f_name
+            espera_aberta.atendido = get_now_sp()
+            db_sql.session.commit()
+            print(f"[TEMPO_ESPERA] Atendido registrado para {contact.phone}")
+    except Exception as e_te:
+        db_sql.session.rollback()
+        print(f"[TEMPO_ESPERA] Erro ao registrar atendido: {e_te}")
+
     _inst_room = contact.instance or 'unknown'
     socketio.emit('chat_assignment', {
         'contact_id': id,
@@ -3802,6 +3844,17 @@ def release_chat(id):
     
     db_sql.session.commit()
     
+    # Atualiza o monitoramento de tempo de espera com o timestamp de finalizacao
+    try:
+        espera_ativa = TempoEspera.query.filter_by(numero_cliente=contact.phone, finalizado=None).order_by(TempoEspera.id.desc()).first()
+        if espera_ativa:
+            espera_ativa.finalizado = get_now_sp()
+            db_sql.session.commit()
+            print(f"[TEMPO_ESPERA] Finalizado registrado para {contact.phone}")
+    except Exception as e_te:
+        db_sql.session.rollback()
+        print(f"[TEMPO_ESPERA] Erro ao registrar finalizado: {e_te}")
+
     # Registra no SLA que o atendimento foi finalizado
     track_sla_event(contact.phone, event_type='RELEASED')
     
@@ -4129,6 +4182,20 @@ def chat_transfer():
     except Exception as e_tr:
         db_sql.session.rollback()
         print(f"Erro ao resetar alertas na transferência: {e_tr}")
+
+    # Cria novo registro de espera para a transferência (timer reinicia do zero)
+    try:
+        novo_te = TempoEspera(
+            numero_cliente=contact.phone,
+            setor_filial=f"{setor}:{filial}" if filial else setor,
+            inicio=get_now_sp()
+        )
+        db_sql.session.add(novo_te)
+        db_sql.session.commit()
+        print(f"[TEMPO_ESPERA] Novo registro criado para transferência de {contact.phone} → {filial}/{setor}")
+    except Exception as e_te_tr:
+        db_sql.session.rollback()
+        print(f"[TEMPO_ESPERA] Erro ao criar registro na transferência: {e_te_tr}")
 
     n8n_webhook_url = "https://n8n-n8n.ioms5g.easypanel.host/webhook/chamar"
     
