@@ -5430,7 +5430,7 @@ def index_page():
 
 @app.route('/<path:path>')
 def serve_frontend(path):
-    if path in ('index.html', 'dashboard.html', 'admin.html', 'reports.html', 'entregador', 'entregador.html'):
+    if path in ('index.html', 'dashboard.html', 'admin.html', 'reports.html', 'relatorio.html', 'ranking.html', 'entregador', 'entregador.html'):
         return send_from_directory(ROOT_DIR, 'entregador.html') if path == 'entregador' else send_from_directory(ROOT_DIR, path)
     if path.startswith('css/') or path.startswith('js/') or path.startswith('img/'):
         return send_from_directory(ROOT_DIR, path)
