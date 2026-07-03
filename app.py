@@ -10,7 +10,7 @@ import datetime
 import pytz
 
 def get_now():
-    return datetime.datetime.now(pytz.timezone('America/Sao_Paulo'))
+    return datetime.datetime.now(pytz.timezone('America/Sao_Paulo')).replace(tzinfo=None)
 
 from functools import wraps
 import time
