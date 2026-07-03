@@ -204,7 +204,7 @@ class TempoEspera(db_sql.Model):
     numero_cliente = db_sql.Column(db_sql.String(50), nullable=False)
     nome_atendente = db_sql.Column(db_sql.String(100), nullable=True)
     setor_filial = db_sql.Column(db_sql.String(150), nullable=True)
-    inicio = db_sql.Column(db_sql.DateTime, nullable=False, default=get_now_sp)
+    inicio = db_sql.Column(db_sql.DateTime, nullable=False, default=get_now)
     atendido = db_sql.Column(db_sql.DateTime, nullable=True)
     finalizado = db_sql.Column(db_sql.DateTime, nullable=True)
 
@@ -1143,7 +1143,7 @@ def add_bot_tag():
     try:
         espera_aberta = TempoEspera.query.filter_by(numero_cliente=phone, atendido=None).first()
         if not espera_aberta:
-            nova_espera = TempoEspera(numero_cliente=phone, inicio=get_now_sp())
+            nova_espera = TempoEspera(numero_cliente=phone, inicio=get_now())
             db_sql.session.add(nova_espera)
             db_sql.session.commit()
             print(f"[TEMPO_ESPERA] Inicio registrado para {phone}")
@@ -3811,7 +3811,7 @@ def assign_chat(id):
                 espera_aberta.setor_filial = f"{_s_name}:{_f_name}"
             elif _s_name or _f_name:
                 espera_aberta.setor_filial = _s_name or _f_name
-            espera_aberta.atendido = get_now_sp()
+            espera_aberta.atendido = get_now()
             db_sql.session.commit()
             print(f"[TEMPO_ESPERA] Atendido registrado para {contact.phone}")
     except Exception as e_te:
@@ -3890,7 +3890,7 @@ def release_chat(id):
     try:
         espera_ativa = TempoEspera.query.filter_by(numero_cliente=contact.phone, finalizado=None).order_by(TempoEspera.id.desc()).first()
         if espera_ativa:
-            espera_ativa.finalizado = get_now_sp()
+            espera_ativa.finalizado = get_now()
             db_sql.session.commit()
             print(f"[TEMPO_ESPERA] Finalizado registrado para {contact.phone}")
     except Exception as e_te:
@@ -4230,7 +4230,7 @@ def chat_transfer():
         novo_te = TempoEspera(
             numero_cliente=contact.phone,
             setor_filial=f"{setor}:{filial}" if filial else setor,
-            inicio=get_now_sp()
+            inicio=get_now()
         )
         db_sql.session.add(novo_te)
         db_sql.session.commit()
