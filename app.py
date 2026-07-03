@@ -509,6 +509,48 @@ def migrate_to_sql():
 
 migrate_to_sql()
 
+# Migração explícita: garante tabelas tempo_espera e nps_votos no banco
+def migrate_novas_tabelas():
+    """Cria as tabelas tempo_espera e nps_votos caso não existam (banco já existente)."""
+    with app.app_context():
+        try:
+            db_sql.session.execute(db_sql.text("""
+                CREATE TABLE IF NOT EXISTS tempo_espera (
+                    id SERIAL PRIMARY KEY,
+                    numero_cliente VARCHAR(50) NOT NULL,
+                    nome_atendente VARCHAR(100),
+                    setor_filial VARCHAR(150),
+                    inicio TIMESTAMP NOT NULL DEFAULT NOW(),
+                    atendido TIMESTAMP,
+                    finalizado TIMESTAMP
+                )
+            """))
+            db_sql.session.commit()
+            print("[MIGRATE] Tabela tempo_espera verificada/criada.")
+        except Exception as e_te:
+            db_sql.session.rollback()
+            print(f"[MIGRATE] tempo_espera: {e_te}")
+
+        try:
+            db_sql.session.execute(db_sql.text("""
+                CREATE TABLE IF NOT EXISTS nps_votos (
+                    id SERIAL PRIMARY KEY,
+                    numero VARCHAR(50),
+                    voto VARCHAR(50) NOT NULL,
+                    atendente VARCHAR(150),
+                    filial VARCHAR(150),
+                    setor VARCHAR(150),
+                    data_voto TEXT
+                )
+            """))
+            db_sql.session.commit()
+            print("[MIGRATE] Tabela nps_votos verificada/criada.")
+        except Exception as e_nps:
+            db_sql.session.rollback()
+            print(f"[MIGRATE] nps_votos: {e_nps}")
+
+migrate_novas_tabelas()
+
 # ─── Middleware ─────────────────────────────────────────────────────────────
 
 @app.before_request
