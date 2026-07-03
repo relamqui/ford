@@ -2621,9 +2621,9 @@ def wait_time_monitor_loop():
                         nome_cliente = contact_obj.name if contact_obj else reg.numero
                         instance_obj = contact_obj.instance if contact_obj else None
 
-                        # Busca filial e setor: tenta pelo atendente primeiro, depois pelo ultimo_setor
+                        # Busca filial e setor: tenta pelo atendente primeiro
                         filial_nome = None
-                        setor_nome = reg.ultimo_setor  # fallback: setor de destino da transferência
+                        setor_nome = None
                         if contact_obj and contact_obj.assigned_to:
                             atend_user = User.query.get(contact_obj.assigned_to)
                             if atend_user:
@@ -5283,10 +5283,11 @@ def report_volume_chats_filiais():
 
         # Fila de ATENDIMENTO (atendimentos_chat com status='atendente')
         sql_atend = db_sql.text("""
-            SELECT ultimo_setor, COUNT(*) as qtd
-            FROM atendimentos_chat
-            WHERE status = 'atendente'
-            GROUP BY ultimo_setor
+            SELECT COALESCE(u.setor, '-') || ':' || COALESCE(u.filial, '-') as sf, COUNT(*) as qtd
+            FROM atendimentos_chat a
+            JOIN users u ON u.name = a.atendente
+            WHERE a.status = 'atendente'
+            GROUP BY u.setor, u.filial
         """)
         atend_rows = db_sql.session.execute(sql_atend).fetchall()
         for row in atend_rows:
