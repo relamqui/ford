@@ -170,6 +170,8 @@ class AtendimentoChat(db_sql.Model):
     alerta_40min_enviado = db_sql.Column(db_sql.Boolean, default=False, nullable=False, server_default='false')
     # Timestamp ISO de quando o status mudou para 'atendente' (início da espera)
     atendente_desde = db_sql.Column(db_sql.Text, nullable=True)
+    # Guarda o nome do último atendente que finalizou a conversa
+    ultimo_atendimento = db_sql.Column(db_sql.String(100), nullable=True)
 
 class SlaHistory(db_sql.Model):
     __tablename__ = 'sla_history'
@@ -470,11 +472,12 @@ def migrate_to_sql():
             db_sql.session.commit()
             print("Migração concluída.")
 
-        # Migração dos campos de alerta de tempo de espera (compatível com SQLite e PostgreSQL)
+        # Migração dos campos de alerta de tempo de espera e ultimo atendimento
         for col_def in [
             "ALTER TABLE atendimentos_chat ADD COLUMN IF NOT EXISTS alerta_20min_enviado BOOLEAN DEFAULT FALSE",
             "ALTER TABLE atendimentos_chat ADD COLUMN IF NOT EXISTS alerta_40min_enviado BOOLEAN DEFAULT FALSE",
             "ALTER TABLE atendimentos_chat ADD COLUMN IF NOT EXISTS atendente_desde TEXT",
+            "ALTER TABLE atendimentos_chat ADD COLUMN IF NOT EXISTS ultimo_atendimento VARCHAR(100)",
         ]:
             try:
                 db_sql.session.execute(db_sql.text(col_def))
@@ -3923,6 +3926,7 @@ def release_chat(id):
             atend_chat_rel.atendente_desde = None
             atend_chat_rel.alerta_20min_enviado = False
             atend_chat_rel.alerta_40min_enviado = False
+            atend_chat_rel.ultimo_atendimento = old_name
             db_sql.session.commit()
             print(f"[RELEASE] Alertas e atendente resetados para {contact.phone}")
     except Exception as e_rel:
