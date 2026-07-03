@@ -5077,7 +5077,7 @@ def report_tempo_espera_atendentes():
         import math
         start_date = request.args.get('start_date')
         end_date   = request.args.get('end_date')
-        filters = "AND atendido IS NOT NULL AND nome_atendente IS NOT NULL AND nome_atendente != ''"
+        filters = ""
         params  = {}
         if start_date:
             filters += " AND inicio >= :start_date"
@@ -5133,7 +5133,7 @@ def report_tempo_espera_filiais():
         import math
         start_date = request.args.get('start_date')
         end_date   = request.args.get('end_date')
-        filters = "AND atendido IS NOT NULL AND setor_filial IS NOT NULL AND setor_filial != ''"
+        filters = ""
         params  = {}
         if start_date:
             filters += " AND inicio >= :start_date"
