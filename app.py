@@ -4928,10 +4928,10 @@ def report_nps_filiais():
         filters = ""
         params = {}
         if start_date:
-            filters += " AND data_voto >= :start_date"
+            filters += " AND (data_voto IS NULL OR data_voto >= :start_date)"
             params['start_date'] = start_date
         if end_date:
-            filters += " AND data_voto <= :end_date"
+            filters += " AND (data_voto IS NULL OR data_voto <= :end_date)"
             params['end_date'] = end_date + ' 23:59:59'
 
         sql = db_sql.text(f"""
@@ -5012,10 +5012,10 @@ def report_nps_atendentes():
         filters = ""
         params = {}
         if start_date:
-            filters += " AND data_voto >= :start_date"
+            filters += " AND (data_voto IS NULL OR data_voto >= :start_date)"
             params['start_date'] = start_date
         if end_date:
-            filters += " AND data_voto <= :end_date"
+            filters += " AND (data_voto IS NULL OR data_voto <= :end_date)"
             params['end_date'] = end_date + ' 23:59:59'
 
         sql = db_sql.text(f"""
