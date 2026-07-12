@@ -91,6 +91,17 @@ window.onload = async () => {
     setTimeout(() => { overlay.style.display = 'none'; }, 360);
   }
 
+  // ── Etapa 4: abrir chat via URL (?chat=contact_id) ──
+  const urlParams = new URLSearchParams(window.location.search);
+  const chatId = urlParams.get('chat');
+  if (chatId) {
+    setTimeout(async () => {
+      await openChat(chatId);
+      // Limpa o parâmetro da URL sem recarregar
+      window.history.replaceState({}, document.title, 'dashboard.html');
+    }, 500);
+  }
+
   // Para usuarios nao-admin, recarregar contatos periodicamente
   if (user.role !== 'admin') {
     setInterval(async () => {

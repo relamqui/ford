@@ -4942,11 +4942,11 @@ def report_ranking():
         return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
 
 
-@app.route('/api/reports/motivos-filiais', methods=['GET'])
+@app.route('/api/reports/motivos-geral', methods=['GET'])
 @auth_required
 @admin_or_gestor_required
-def report_motivos_filiais():
-    """Retorna agrupamento de motivos de finalização por Filial e Setor."""
+def report_motivos_geral():
+    """Retorna contagem geral de motivos de finalização (para gráfico de pizza)."""
     try:
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
@@ -4954,60 +4954,110 @@ def report_motivos_filiais():
         filters = ""
         params = {}
         if start_date:
-            filters += " AND (m.criado_em IS NULL OR m.criado_em >= :start_date)"
+            filters += " AND (criado_em IS NULL OR criado_em >= :start_date)"
             params['start_date'] = start_date
         if end_date:
-            filters += " AND (m.criado_em IS NULL OR m.criado_em <= :end_date)"
+            filters += " AND (criado_em IS NULL OR criado_em <= :end_date)"
             params['end_date'] = end_date + ' 23:59:59'
 
         sql = db_sql.text(f"""
-            SELECT COALESCE(u.filial, 'Sem Filial') as filial,
-                   COALESCE(u.setor, 'Sem Setor') as setor,
-                   m.motivo,
-                   COUNT(*) as qtd
-            FROM motivo_finalizacao m
-            LEFT JOIN "user" u ON u.name = m.atendente
+            SELECT motivo, COUNT(*) as qtd
+            FROM motivo_finalizacao
             WHERE 1=1 {filters}
-            GROUP BY u.filial, u.setor, m.motivo
-            ORDER BY u.filial, u.setor, m.motivo
+            GROUP BY motivo
+            ORDER BY qtd DESC
         """)
         rows = db_sql.session.execute(sql, params).fetchall()
 
-        filiais = {}
+        vendas = 0
+        orcamentos = 0
+        outros = 0
         for row in rows:
-            filial = row[0]
-            setor = row[1]
-            motivo = row[2]
-            qtd = row[3]
-
-            if filial not in filiais:
-                filiais[filial] = {'filial': filial, 'setores': {}}
-
-            if setor not in filiais[filial]['setores']:
-                filiais[filial]['setores'][setor] = {
-                    'setor': setor,
-                    'vendas': 0,
-                    'orcamentos': 0,
-                    'outros': 0,
-                    'total': 0
-                }
-
-            s = filiais[filial]['setores'][setor]
-            s['total'] += qtd
+            motivo = row[0]
+            qtd = row[1]
             if motivo == 'Venda':
-                s['vendas'] += qtd
+                vendas += qtd
             elif motivo == 'Orçamento':
-                s['orcamentos'] += qtd
+                orcamentos += qtd
             else:
-                s['outros'] += qtd
+                outros += qtd
 
-        result = []
-        for f_name, f_data in filiais.items():
-            f_data['setores'] = list(f_data['setores'].values())
-            result.append(f_data)
-        result.sort(key=lambda x: x['filial'])
+        total = vendas + orcamentos + outros
+        return jsonify({
+            'success': True,
+            'data': {
+                'vendas': vendas,
+                'orcamentos': orcamentos,
+                'outros': outros,
+                'total': total
+            }
+        }), 200
+    except Exception as e:
+        import traceback
+        return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
 
-        return jsonify({'success': True, 'data': result}), 200
+
+@app.route('/api/reports/motivos-individuais', methods=['GET'])
+@auth_required
+@admin_or_gestor_required
+def report_motivos_individuais():
+    """Retorna lista paginada de chats individuais com motivo de finalização."""
+    try:
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 50))
+        offset = (page - 1) * per_page
+
+        filters = ""
+        params = {}
+        if start_date:
+            filters += " AND (criado_em IS NULL OR criado_em >= :start_date)"
+            params['start_date'] = start_date
+        if end_date:
+            filters += " AND (criado_em IS NULL OR criado_em <= :end_date)"
+            params['end_date'] = end_date + ' 23:59:59'
+
+        # Total count
+        sql_count = db_sql.text(f"""
+            SELECT COUNT(*) FROM motivo_finalizacao WHERE 1=1 {filters}
+        """)
+        total = db_sql.session.execute(sql_count, params).scalar() or 0
+
+        params['limit'] = per_page
+        params['offset'] = offset
+        sql = db_sql.text(f"""
+            SELECT m.id, m.contact_id, m.numero_cliente, m.atendente,
+                   m.motivo, m.detalhes, m.criado_em
+            FROM motivo_finalizacao m
+            WHERE 1=1 {filters}
+            ORDER BY m.criado_em DESC
+            LIMIT :limit OFFSET :offset
+        """)
+        rows = db_sql.session.execute(sql, params).fetchall()
+
+        items = []
+        for row in rows:
+            items.append({
+                'id': row[0],
+                'contact_id': row[1],
+                'numero_cliente': row[2] or '',
+                'atendente': row[3] or '',
+                'motivo': row[4] or '',
+                'detalhes': row[5] or '',
+                'criado_em': row[6].strftime('%d/%m/%Y %H:%M') if row[6] else ''
+            })
+
+        return jsonify({
+            'success': True,
+            'data': items,
+            'pagination': {
+                'total': total,
+                'page': page,
+                'per_page': per_page,
+                'total_pages': (total + per_page - 1) // per_page
+            }
+        }), 200
     except Exception as e:
         import traceback
         return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500

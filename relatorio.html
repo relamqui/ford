@@ -4,11 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>WP CRM — Relatórios</title>
-  <meta name="description" content="Painel de relatórios: NPS e Tempo de Espera por filial, setor e atendente." />
+  <meta name="description" content="Painel de relatórios: Motivos de Finalização e Tempo de Espera por filial, setor e atendente." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/dashboard.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     :root {
       --green:  #00c896;
@@ -17,6 +18,9 @@
       --yellow: #f5a623;
       --red:    #e74c3c;
       --purple: #9b59b6;
+      --venda-color: #00c896;
+      --orc-color:   #f5a623;
+      --outro-color: #9b59b6;
     }
     body { height:auto; overflow:auto; background-color:var(--bg-app); color:var(--text-primary); font-family:'Inter',sans-serif; }
     .page-container { max-width:1400px; margin:0 auto; padding:32px 40px; }
@@ -49,6 +53,21 @@
     .sub-tab-content { display:none; }
     .sub-tab-content.active { display:block; }
 
+    /* ── Pizza chart area ── */
+    .chart-wrapper { display:flex; gap:40px; align-items:center; flex-wrap:wrap; padding:32px; background:var(--bg-card); border:1px solid var(--border); border-radius:16px; }
+    .chart-canvas-wrap { width:280px; height:280px; flex-shrink:0; position:relative; }
+    .chart-legend { display:flex; flex-direction:column; gap:20px; flex:1; min-width:200px; }
+    .legend-item { display:flex; align-items:center; gap:14px; }
+    .legend-dot { width:16px; height:16px; border-radius:50%; flex-shrink:0; }
+    .legend-info { display:flex; flex-direction:column; }
+    .legend-label { font-size:13px; font-weight:600; color:var(--text-secondary); }
+    .legend-count { font-size:28px; font-weight:800; line-height:1; margin-top:2px; }
+    .legend-pct { font-size:12px; color:var(--text-secondary); margin-top:2px; }
+    .chart-total-box { margin-top:24px; padding-top:20px; border-top:1px solid var(--border); display:flex; flex-direction:column; }
+    .chart-total-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--text-secondary); }
+    .chart-total-count { font-size:36px; font-weight:800; color:var(--text-primary); }
+
+    /* ── Filial blocks ── */
     .filial-block { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; margin-bottom:16px; overflow:hidden; transition:box-shadow .2s; }
     .filial-block:hover { box-shadow:0 4px 24px rgba(0,0,0,.18); }
     .filial-header { display:flex; align-items:center; justify-content:space-between; padding:18px 22px; cursor:pointer; user-select:none; transition:background .2s; }
@@ -72,12 +91,6 @@
     .setor-card-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px; }
     .setor-name { font-size:14px; font-weight:600; }
     .setor-meta { font-size:11px; color:var(--text-secondary); margin-top:2px; }
-
-    .nps-circle { display:inline-flex; align-items:center; justify-content:center; width:52px; height:52px; border-radius:50%; font-size:14px; font-weight:800; border:3px solid; }
-    .nps-circle.excelente { color:var(--green);  border-color:var(--green);  background:rgba(0,200,150,.1); }
-    .nps-circle.bom       { color:var(--blue);   border-color:var(--blue);   background:rgba(52,152,219,.1); }
-    .nps-circle.neutro    { color:var(--yellow); border-color:var(--yellow); background:rgba(245,166,35,.1); }
-    .nps-circle.ruim      { color:var(--red);    border-color:var(--red);    background:rgba(231,76,60,.1); }
 
     .media-nota { font-size:20px; font-weight:800; }
     .media-nota.alta  { color:var(--green); }
@@ -127,10 +140,13 @@
     .att-name { font-weight:600; font-size:14px; }
     .att-sub  { font-size:12px; color:var(--text-secondary); margin-top:1px; }
 
-    .pill { display:inline-flex; align-items:center; padding:2px 9px; border-radius:20px; font-size:12px; font-weight:600; }
+    .pill { display:inline-flex; align-items:center; padding:3px 10px; border-radius:20px; font-size:12px; font-weight:600; white-space:nowrap; }
     .pill.prom { background:rgba(0,200,150,.15); color:var(--green); }
     .pill.neut { background:rgba(245,166,35,.15); color:var(--yellow); }
     .pill.detr { background:rgba(231,76,60,.15);  color:var(--red); }
+    .pill.venda { background:rgba(0,200,150,.18); color:var(--green); border:1px solid rgba(0,200,150,.3); }
+    .pill.orc   { background:rgba(245,166,35,.18); color:var(--yellow); border:1px solid rgba(245,166,35,.3); }
+    .pill.outro { background:rgba(155,89,182,.18); color:var(--purple); border:1px solid rgba(155,89,182,.3); }
 
     .empty-state { text-align:center; padding:56px 20px; color:var(--text-secondary); }
     .empty-icon  { font-size:38px; margin-bottom:10px; }
@@ -140,13 +156,28 @@
     .spinner.tempo-spin::after { border-top-color:var(--cyan); }
     .spinner.volume-spin::after{ border-top-color:var(--purple); }
     @keyframes spin { to { transform:rotate(360deg); } }
+
+    /* ── Individual chats table ── */
+    .indiv-detalhes { font-size:12px; color:var(--text-secondary); max-width:220px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .btn-goto-chat { display:inline-flex; align-items:center; gap:6px; padding:6px 14px; border-radius:8px; border:1px solid rgba(0,200,150,.4); background:rgba(0,200,150,.08); color:var(--green); font-size:12px; font-weight:600; cursor:pointer; font-family:'Inter',sans-serif; text-decoration:none; transition:all .2s; white-space:nowrap; }
+    .btn-goto-chat:hover { background:rgba(0,200,150,.18); border-color:var(--green); transform:translateY(-1px); }
+
+    /* ── Pagination ── */
+    .pagination { display:flex; align-items:center; justify-content:space-between; padding:16px; border-top:1px solid var(--border); background:rgba(0,0,0,.1); }
+    .pagination-info { font-size:13px; color:var(--text-secondary); }
+    .pagination-btns { display:flex; gap:4px; align-items:center; }
+    .pg-btn { padding:6px 12px; border-radius:8px; border:1px solid var(--border); background:rgba(255,255,255,.05); color:var(--text-primary); font-size:13px; font-weight:600; cursor:pointer; font-family:'Inter',sans-serif; transition:all .2s; }
+    .pg-btn:hover:not(:disabled) { background:rgba(255,255,255,.12); }
+    .pg-btn:disabled { opacity:.35; cursor:not-allowed; }
+    .pg-btn.active { background:linear-gradient(135deg,#00c896,#00a87a); border-color:transparent; color:white; }
+    .pg-dots { padding:6px 4px; color:var(--text-secondary); }
   </style>
 </head>
 <body>
 <div class="page-container">
 
   <button class="back-btn" onclick="location.href='dashboard.html'">
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
     Voltar ao Dashboard
   </button>
   <div class="page-title">
@@ -168,14 +199,16 @@
     <button class="main-tab-btn tempo" id="main-tab-tempo" onclick="switchMain('tempo')">⏱️ Tempo de Espera</button>
   </div>
 
-  <!-- NPS -->
+  <!-- MOTIVOS -->
   <div class="main-tab-content active" id="main-content-nps">
     <div class="sub-tabs">
-      <button class="sub-tab-btn active-nps" id="nps-sub-filiais" onclick="switchSub('nps','filiais')">🏢 Por Filial / Setor</button>
+      <button class="sub-tab-btn active-nps" id="nps-sub-geral" onclick="switchSub('nps','geral')">📊 Gráfico Geral</button>
       <button class="sub-tab-btn" id="nps-sub-atendentes" onclick="switchSub('nps','atendentes')">🧑‍💼 Ranking Atendentes</button>
+      <button class="sub-tab-btn" id="nps-sub-individuais" onclick="switchSubIndividuais()">💬 Chats Individual</button>
     </div>
-    <div class="sub-tab-content active" id="nps-content-filiais"><div id="nps-filiais-box"><div class="spinner nps-spin"></div></div></div>
+    <div class="sub-tab-content active" id="nps-content-geral"><div id="nps-geral-box"><div class="spinner nps-spin"></div></div></div>
     <div class="sub-tab-content" id="nps-content-atendentes"><div id="nps-atendentes-box"><div class="spinner nps-spin"></div></div></div>
+    <div class="sub-tab-content" id="nps-content-individuais"><div id="nps-individuais-box"><div class="spinner nps-spin"></div></div></div>
   </div>
 
   <!-- TEMPO -->
@@ -188,12 +221,13 @@
     <div class="sub-tab-content" id="tempo-content-atendentes"><div id="tempo-atendentes-box"><div class="spinner tempo-spin"></div></div></div>
   </div>
 
-
-
 </div>
 <script>
   const API = window.location.origin;
   const tok = () => localStorage.getItem('wp_crm_token');
+  let pizzaChart = null;
+  let currentPage = 1;
+  const perPage = 50;
 
   window.onload = () => {
     if (!tok()) { location.href = 'index.html'; return; }
@@ -216,59 +250,124 @@
     document.getElementById(sec+'-sub-'+sub).classList.add(ac);
     document.getElementById(sec+'-content-'+sub).classList.add('active');
   }
+  function switchSubIndividuais() {
+    switchSub('nps', 'individuais');
+    currentPage = 1;
+    loadMotivosIndividuais();
+  }
   function tog(id) { document.getElementById(id).classList.toggle('open'); }
 
-  function qp() {
+  function qp(extra) {
     const s = document.getElementById('filterStart').value, e = document.getElementById('filterEnd').value;
     const p = new URLSearchParams();
     if (s) p.append('start_date',s); if (e) p.append('end_date',e);
+    if (extra) Object.entries(extra).forEach(([k,v]) => p.append(k,v));
     return p.toString() ? '?'+p.toString() : '';
   }
 
-  function loadAll() { loadNpsF(); loadNpsA(); loadTeF(); loadTeA(); }
+  function loadAll() {
+    currentPage = 1;
+    loadMotivosGeral();
+    loadNpsA();
+    loadTeF();
+    loadTeA();
+    // reload individual se estiver visível
+    const indivVisible = document.getElementById('nps-content-individuais').classList.contains('active');
+    if (indivVisible) loadMotivosIndividuais();
+  }
 
   /* ── Helpers ── */
   function fmtS(s) { if(!s||s<=0) return '—'; s=Math.round(s); const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sc=s%60; if(h>0)return h+'h '+m+'m'; if(m>0)return m+'m '+sc+'s'; return sc+'s'; }
   function spC(s) { if(!s||s<=0)return''; if(s<120)return'fast'; if(s<600)return'medium'; return'slow'; }
   function scC(s,a) { const mx=Math.max(...a),p=mx>0?s/mx:0; if(p>=.75)return'top'; if(p>=.5)return'mid'; if(p>=.25)return'low'; return'bot'; }
-  function npsC(s) { if(s>=75)return'excelente'; if(s>=50)return'bom'; if(s>=0)return'neutro'; return'ruim'; }
-  function mC(n) { if(n>=4.5)return'alta'; if(n>=3)return'media'; return'baixa'; }
   function bp(v,t) { return t>0?Math.round((v/t)*100):0; }
   function chv() { return'<svg class="chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>'; }
   function errH(m) { return'<div class="empty-state"><div class="empty-icon">⚠️</div><p>'+m+'</p></div>'; }
   function empH(m) { return'<div class="empty-state"><div class="empty-icon">📭</div><p>'+m+'</p></div>'; }
   const medals = ['🥇','🥈','🥉'];
+  function pilMotivo(m) {
+    if(m==='Venda') return '<span class="pill venda">💰 Venda</span>';
+    if(m==='Orçamento') return '<span class="pill orc">📝 Orçamento</span>';
+    return '<span class="pill outro">❓ Outro</span>';
+  }
 
-  /* ══ MOTIVOS FILIAIS ══ */
-  async function loadNpsF() {
-    const el = document.getElementById('nps-filiais-box');
+  /* ══ GRÁFICO GERAL ══ */
+  async function loadMotivosGeral() {
+    const el = document.getElementById('nps-geral-box');
     el.innerHTML = '<div class="spinner nps-spin"></div>';
     try {
-      const r = await fetch(API+'/api/reports/motivos-filiais'+qp(), {headers:{Authorization:'Bearer '+tok()}});
+      const r = await fetch(API+'/api/reports/motivos-geral'+qp(), {headers:{Authorization:'Bearer '+tok()}});
       const j = await r.json();
       if(!r.ok||!j.success){el.innerHTML=errH(j.error||'Erro');return;}
-      const d = j.data||[];
-      if(!d.length){el.innerHTML=empH('Nenhum dado encontrado.');return;}
-      el.innerHTML = d.map((f,fi)=>{
-        let tvendas=0,torc=0,tout=0,ttot=0;
-        f.setores.forEach(s=>{tvendas+=s.vendas;torc+=s.orcamentos;tout+=s.outros;ttot+=s.total;});
-        const setoresHtml = f.setores.map(s=>{
-          return '<div class="setor-card"><div class="setor-card-header"><div><div class="setor-name">'+s.setor+'</div><div class="setor-meta">'+s.total+' atendimento(s)</div></div></div>'
-            +'<div class="nps-bars" style="margin-top:10px">'
-            +'<div class="nps-bar-row"><span class="nps-bar-label">💰 Vendas</span><div class="nps-bar-track"><div class="nps-bar-fill prom" style="width:'+bp(s.vendas,s.total)+'%"></div></div><span class="nps-bar-count">'+s.vendas+'</span></div>'
-            +'<div class="nps-bar-row"><span class="nps-bar-label">📝 Orç.</span><div class="nps-bar-track"><div class="nps-bar-fill neut" style="width:'+bp(s.orcamentos,s.total)+'%"></div></div><span class="nps-bar-count">'+s.orcamentos+'</span></div>'
-            +'<div class="nps-bar-row"><span class="nps-bar-label">❓ Outros</span><div class="nps-bar-track"><div class="nps-bar-fill detr" style="width:'+bp(s.outros,s.total)+'%"></div></div><span class="nps-bar-count">'+s.outros+'</span></div>'
-            +'</div></div>';
-        }).join('');
-        return '<div class="filial-block" id="nf'+fi+'">'
-          +'<div class="filial-header" onclick="tog(\'nf'+fi+'\')">'
-          +'<div class="filial-header-left"><div class="filial-icon ni">🏢</div><div><div class="filial-name">'+f.filial+'</div><div class="filial-meta">'+f.setores.length+' setor(es) · '+ttot+' atendimentos</div></div></div>'
-          +'<div class="filial-header-right"><div class="stat-inline"><div class="stat-val media-nota alta">💰 '+tvendas+'</div><div class="stat-lbl">Vendas</div></div>'
-          +'<div class="stat-inline"><div class="stat-val media-nota media">📝 '+torc+'</div><div class="stat-lbl">Orçamentos</div></div>'
-          +'<div class="stat-inline"><div class="stat-val media-nota baixa">❓ '+tout+'</div><div class="stat-lbl">Outros</div></div>'
-          +chv()+'</div></div>'
-          +'<div class="filial-body"><div class="setores-grid">'+setoresHtml+'</div></div></div>';
-      }).join('');
+      const d = j.data;
+      const total = d.total || 0;
+
+      if(total === 0){el.innerHTML=empH('Nenhum atendimento finalizado no período.');return;}
+
+      el.innerHTML = `
+        <div class="chart-wrapper">
+          <div class="chart-canvas-wrap"><canvas id="pizzaChart"></canvas></div>
+          <div class="chart-legend">
+            <div class="legend-item">
+              <div class="legend-dot" style="background:#00c896"></div>
+              <div class="legend-info">
+                <span class="legend-label">💰 Vendas</span>
+                <span class="legend-count" style="color:#00c896">${d.vendas}</span>
+                <span class="legend-pct">${bp(d.vendas,total)}% do total</span>
+              </div>
+            </div>
+            <div class="legend-item">
+              <div class="legend-dot" style="background:#f5a623"></div>
+              <div class="legend-info">
+                <span class="legend-label">📝 Orçamentos</span>
+                <span class="legend-count" style="color:#f5a623">${d.orcamentos}</span>
+                <span class="legend-pct">${bp(d.orcamentos,total)}% do total</span>
+              </div>
+            </div>
+            <div class="legend-item">
+              <div class="legend-dot" style="background:#9b59b6"></div>
+              <div class="legend-info">
+                <span class="legend-label">❓ Outros</span>
+                <span class="legend-count" style="color:#9b59b6">${d.outros}</span>
+                <span class="legend-pct">${bp(d.outros,total)}% do total</span>
+              </div>
+            </div>
+            <div class="chart-total-box">
+              <span class="chart-total-label">Total de atendimentos finalizados</span>
+              <span class="chart-total-count">${total}</span>
+            </div>
+          </div>
+        </div>`;
+
+      if(pizzaChart) pizzaChart.destroy();
+      const ctx = document.getElementById('pizzaChart').getContext('2d');
+      pizzaChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: ['Vendas', 'Orçamentos', 'Outros'],
+          datasets: [{
+            data: [d.vendas, d.orcamentos, d.outros],
+            backgroundColor: ['#00c896', '#f5a623', '#9b59b6'],
+            borderColor: ['rgba(0,200,150,.5)','rgba(245,166,35,.5)','rgba(155,89,182,.5)'],
+            borderWidth: 2,
+            hoverOffset: 10
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '65%',
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: ctx => ` ${ctx.label}: ${ctx.raw} (${bp(ctx.raw, total)}%)`
+              }
+            }
+          },
+          animation: { animateRotate: true, duration: 800 }
+        }
+      });
     } catch(e){el.innerHTML=errH('Erro de conexão.');}
   }
 
@@ -294,6 +393,66 @@
           +'<td style="font-weight:700">'+r.total+'</td></tr>').join('')
         +'</tbody></table></div>';
     } catch(e){el.innerHTML=errH('Erro de conexão.');}
+  }
+
+  /* ══ CHATS INDIVIDUAIS ══ */
+  async function loadMotivosIndividuais(page) {
+    if(page) currentPage = page;
+    const el = document.getElementById('nps-individuais-box');
+    el.innerHTML = '<div class="spinner nps-spin"></div>';
+    try {
+      const r = await fetch(API+'/api/reports/motivos-individuais'+qp({page:currentPage,per_page:perPage}), {headers:{Authorization:'Bearer '+tok()}});
+      const j = await r.json();
+      if(!r.ok||!j.success){el.innerHTML=errH(j.error||'Erro');return;}
+      const d = j.data||[];
+      const pg = j.pagination||{total:0,page:1,total_pages:1};
+      if(!d.length){el.innerHTML=empH('Nenhum chat finalizado no período.');return;}
+
+      const rows = d.map(item => {
+        const det = item.detalhes ? `<div class="indiv-detalhes" title="${item.detalhes.replace(/"/g,'&quot;')}">${item.detalhes}</div>` : '<span style="color:var(--text-secondary);font-size:12px">—</span>';
+        return '<tr>'
+          +'<td><div class="att-info"><span class="att-name">'+item.atendente+'</span><span class="att-sub">'+item.criado_em+'</span></div></td>'
+          +'<td style="font-weight:500;font-size:13px">'+item.numero_cliente+'</td>'
+          +'<td>'+pilMotivo(item.motivo)+'</td>'
+          +'<td>'+det+'</td>'
+          +'<td><a class="btn-goto-chat" href="dashboard.html?chat='+encodeURIComponent(item.contact_id)+'">💬 Ir ao Chat</a></td>'
+          +'</tr>';
+      }).join('');
+
+      const paginationHtml = buildPagination(pg.total, pg.page, pg.total_pages, pg.per_page);
+
+      el.innerHTML = '<div class="ranking-table-wrap">'
+        +'<table class="rtable"><thead><tr>'
+        +'<th>Atendente</th><th>Número</th><th>Motivo</th><th>Detalhes</th><th>Ação</th>'
+        +'</tr></thead><tbody>'+rows+'</tbody></table>'
+        + paginationHtml
+        +'</div>';
+    } catch(e){el.innerHTML=errH('Erro de conexão.');}
+  }
+
+  function buildPagination(total, page, totalPages, perPage) {
+    const start = (page-1)*perPage+1;
+    const end = Math.min(page*perPage, total);
+    let btns = '';
+    // prev
+    btns += `<button class="pg-btn" onclick="loadMotivosIndividuais(${page-1})" ${page<=1?'disabled':''}>‹ Anterior</button>`;
+    // page numbers
+    const pages = [];
+    if(totalPages <= 7) {
+      for(let i=1;i<=totalPages;i++) pages.push(i);
+    } else {
+      pages.push(1);
+      if(page > 3) pages.push('...');
+      for(let i=Math.max(2,page-1);i<=Math.min(totalPages-1,page+1);i++) pages.push(i);
+      if(page < totalPages-2) pages.push('...');
+      pages.push(totalPages);
+    }
+    pages.forEach(p => {
+      if(p==='...') btns += '<span class="pg-dots">…</span>';
+      else btns += `<button class="pg-btn${p===page?' active':''}" onclick="loadMotivosIndividuais(${p})">${p}</button>`;
+    });
+    btns += `<button class="pg-btn" onclick="loadMotivosIndividuais(${page+1})" ${page>=totalPages?'disabled':''}>Próximo ›</button>`;
+    return `<div class="pagination"><span class="pagination-info">Mostrando ${start}–${end} de ${total} registros</span><div class="pagination-btns">${btns}</div></div>`;
   }
 
   /* ══ TEMPO FILIAIS ══ */
