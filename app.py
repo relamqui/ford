@@ -5051,7 +5051,7 @@ def report_motivos_atendentes():
                    m.motivo, 
                    COUNT(*) as qtd
             FROM motivo_finalizacao m
-            LEFT JOIN user u ON u.name = m.atendente
+            LEFT JOIN "user" u ON u.name = m.atendente
             WHERE 1=1 {filters}
             GROUP BY m.atendente, u.filial, u.setor, m.motivo
             ORDER BY m.atendente, m.motivo
@@ -5319,7 +5319,7 @@ def report_volume_chats_filiais():
         sql_atend = db_sql.text("""
             SELECT COALESCE(u.setor, '-') || ':' || COALESCE(u.filial, '-') as sf, COUNT(*) as qtd
             FROM atendimentos_chat a
-            JOIN users u ON u.name = a.atendente
+            JOIN "user" u ON u.name = a.atendente
             WHERE a.status = 'atendente'
             GROUP BY u.setor, u.filial
         """)
