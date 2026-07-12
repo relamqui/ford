@@ -102,6 +102,7 @@ class User(db_sql.Model):
     setor_id = db_sql.Column(db_sql.Integer, db_sql.ForeignKey('setor.id'), nullable=True)
     filial = db_sql.Column(db_sql.String(150), nullable=True)
     setor = db_sql.Column(db_sql.String(150), nullable=True)
+    disponivel = db_sql.Column(db_sql.Boolean, default=True, nullable=False)
 
 class PushSubscription(db_sql.Model):
     id = db_sql.Column(db_sql.Integer, primary_key=True)
@@ -394,6 +395,13 @@ def migrate_to_sql():
             
         try:
             db_sql.session.execute(db_sql.text('ALTER TABLE "user" ADD COLUMN phone VARCHAR(30)'))
+            db_sql.session.commit()
+        except Exception:
+            db_sql.session.rollback()
+
+        try:
+            db_sql.session.execute(db_sql.text('ALTER TABLE "user" ADD COLUMN disponivel BOOLEAN DEFAULT TRUE'))
+            db_sql.session.execute(db_sql.text('UPDATE "user" SET disponivel = TRUE WHERE disponivel IS NULL'))
             db_sql.session.commit()
         except Exception:
             db_sql.session.rollback()
@@ -1019,8 +1027,8 @@ def add_bot_tag():
             contact.assigned_to = None
             contact.assigned_name = None
         
-        # Busca atendentes (role='user')
-        query = User.query.filter(User.role == 'user')
+        # Busca atendentes disponíveis (role='user' e disponivel=True)
+        query = User.query.filter(User.role == 'user', User.disponivel == True)
         
         # Filtra por filial e setor apenas se foram informados
         if filial:
@@ -1029,7 +1037,7 @@ def add_bot_tag():
             query = query.filter(db_sql.func.lower(User.setor) == setor.lower())
             
         users_query = query.all()
-        print(f"[BOT/TAGS] Atendentes encontrados para filial='{filial}' setor='{setor}': {[u.name for u in users_query]}")
+        print(f"[BOT/TAGS] Atendentes disponíveis para filial='{filial}' setor='{setor}': {[u.name for u in users_query]}")
         
         if users_query:
             selected_user = None
@@ -1208,10 +1216,34 @@ def login():
                 'setor_id': user.setor_id,
                 'filial': filial_name,
                 'setor': setor_name,
-                'instances': user.instances or []
+                'instances': user.instances or [],
+                'disponivel': user.disponivel if user.disponivel is not None else True
             }
         })
     return jsonify({'error': 'Credenciais inválidas'}), 401
+
+
+@app.route('/api/auth/disponibilidade', methods=['POST'])
+@auth_required
+def toggle_disponibilidade():
+    """Altera o status de disponibilidade do usuário logado."""
+    user = User.query.get(request.user['id'])
+    if not user:
+        return jsonify({'error': 'Usuário não encontrado'}), 404
+
+    data = request.get_json(silent=True) or {}
+    # Aceita 'disponivel' explícito ou apenas inverte o atual
+    if 'disponivel' in data:
+        user.disponivel = bool(data['disponivel'])
+    else:
+        user.disponivel = not (user.disponivel if user.disponivel is not None else True)
+
+    db_sql.session.commit()
+    return jsonify({
+        'success': True,
+        'disponivel': user.disponivel,
+        'message': 'Disponível' if user.disponivel else 'Indisponível'
+    })
 
 @app.route('/api/admin/users', methods=['GET'])
 @auth_required

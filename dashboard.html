@@ -74,6 +74,10 @@
     </nav>
 
     <div class="sidebar-bottom">
+      <button class="nav-btn" id="btnDisponivel" onclick="toggleDisponibilidade()" title="Alterar disponibilidade" style="position:relative;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+        <span id="dotDisponivel" style="position:absolute;top:6px;right:6px;width:9px;height:9px;border-radius:50%;background:#00c896;border:2px solid var(--bg-sidebar);"></span>
+      </button>
       <button class="nav-btn" onclick="logout()" title="Sair">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       </button>

@@ -130,6 +130,67 @@ function renderUserProfile(user) {
     const navInst = document.getElementById('navInstances');
     if (navInst) navInst.style.display = 'none';
   }
+
+  // Inicializa estado de disponibilidade do botão
+  const disponivel = user.disponivel !== false; // default true
+  _atualizarBotaoDisponibilidade(disponivel);
+}
+
+function _atualizarBotaoDisponibilidade(disponivel) {
+  const dot = document.getElementById('dotDisponivel');
+  const btn = document.getElementById('btnDisponivel');
+  if (!dot || !btn) return;
+  if (disponivel) {
+    dot.style.background = '#00c896'; // verde
+    btn.title = 'Disponível – clique para ficar indisponível';
+    btn.style.color = '';
+  } else {
+    dot.style.background = '#e74c3c'; // vermelho
+    btn.title = 'Indisponível – clique para ficar disponível';
+    btn.style.color = 'var(--red, #e74c3c)';
+  }
+}
+
+async function toggleDisponibilidade() {
+  const token = localStorage.getItem('wp_crm_token');
+  try {
+    const res = await fetch(`${API_URL}/api/auth/disponibilidade`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    if (data.success) {
+      // Atualiza localStorage
+      const userStr = localStorage.getItem('wp_crm_user');
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        user.disponivel = data.disponivel;
+        localStorage.setItem('wp_crm_user', JSON.stringify(user));
+      }
+      _atualizarBotaoDisponibilidade(data.disponivel);
+      // Toast visual
+      const msg = data.disponivel ? '🟢 Você está Disponível' : '🔴 Você está Indisponível';
+      _showToastDisponivel(msg, data.disponivel);
+    }
+  } catch(e) {
+    console.error('Erro ao alterar disponibilidade:', e);
+  }
+}
+
+function _showToastDisponivel(msg, disponivel) {
+  let toast = document.getElementById('toastDisponivel');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'toastDisponivel';
+    toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:12px;font-family:Inter,sans-serif;font-size:14px;font-weight:600;z-index:99999;transition:opacity .3s;box-shadow:0 4px 20px rgba(0,0,0,.35);';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.style.background = disponivel ? 'rgba(0,200,150,.95)' : 'rgba(231,76,60,.95)';
+  toast.style.color = 'white';
+  toast.style.opacity = '1';
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, 2500);
 }
 
 async function loadContacts() {
