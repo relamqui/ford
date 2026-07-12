@@ -3929,19 +3929,19 @@ def release_chat(id):
     # Registra no SLA que o atendimento foi finalizado
     track_sla_event(contact.phone, event_type='RELEASED')
     
-    # Dispara Webhook NPS para o N8N
-    try:
-        nps_payload = {
-            "numero": contact.phone,
-            "instancia": contact.instance,
-            "atendente": old_name,
-            "filial": _filial_r,
-            "setor": _setor_r,
-            "timestamp": get_now().isoformat()
-        }
-        requests.post("https://n8n-n8n.ioms5g.easypanel.host/webhook/ford-acionar-nps", json=nps_payload, timeout=5)
-    except Exception as nps_e:
-        print(f"Erro ao disparar webhook NPS: {nps_e}")
+    # Dispara Webhook NPS para o N8N (Desativado a pedido)
+    # try:
+    #     nps_payload = {
+    #         "numero": contact.phone,
+    #         "instancia": contact.instance,
+    #         "atendente": old_name,
+    #         "filial": _filial_r,
+    #         "setor": _setor_r,
+    #         "timestamp": get_now().isoformat()
+    #     }
+    #     requests.post("https://n8n-n8n.ioms5g.easypanel.host/webhook/ford-acionar-nps", json=nps_payload, timeout=5)
+    # except Exception as nps_e:
+    #     print(f"Erro ao disparar webhook NPS: {nps_e}")
 
     # Resetar alertas de espera ao finalizar o atendimento
     try:
@@ -5026,11 +5026,11 @@ def report_nps_filiais():
         return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
 
 
-@app.route('/api/reports/nps-atendentes', methods=['GET'])
+@app.route('/api/reports/motivos-atendentes', methods=['GET'])
 @auth_required
 @admin_or_gestor_required
-def report_nps_atendentes():
-    """Retorna ranking NPS por Atendente."""
+def report_motivos_atendentes():
+    """Retorna agrupamento de motivos por Atendente."""
     try:
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
@@ -5038,49 +5038,57 @@ def report_nps_atendentes():
         filters = ""
         params = {}
         if start_date:
-            filters += " AND (data_voto IS NULL OR data_voto >= :start_date)"
+            filters += " AND (m.criado_em IS NULL OR m.criado_em >= :start_date)"
             params['start_date'] = start_date
         if end_date:
-            filters += " AND (data_voto IS NULL OR data_voto <= :end_date)"
+            filters += " AND (m.criado_em IS NULL OR m.criado_em <= :end_date)"
             params['end_date'] = end_date + ' 23:59:59'
 
         sql = db_sql.text(f"""
-            SELECT atendente, filial, setor,
-                   COUNT(*) as total_votos,
-                   AVG(CAST(SPLIT_PART(voto, ' ', 1) AS INTEGER)) as media_nota,
-                   SUM(CASE WHEN CAST(SPLIT_PART(voto, ' ', 1) AS INTEGER) = 5 THEN 1 ELSE 0 END) as promotores,
-                   SUM(CASE WHEN CAST(SPLIT_PART(voto, ' ', 1) AS INTEGER) = 4 THEN 1 ELSE 0 END) as neutros,
-                   SUM(CASE WHEN CAST(SPLIT_PART(voto, ' ', 1) AS INTEGER) <= 3 THEN 1 ELSE 0 END) as detratores
-            FROM nps_votos
-            WHERE atendente IS NOT NULL AND atendente != '' {filters}
-            GROUP BY atendente, filial, setor
-            ORDER BY media_nota DESC
+            SELECT COALESCE(m.atendente, 'Sem Atendente') as atendente, 
+                   COALESCE(u.filial, 'Sem Filial') as filial, 
+                   COALESCE(u.setor, 'Sem Setor') as setor, 
+                   m.motivo, 
+                   COUNT(*) as qtd
+            FROM motivo_finalizacao m
+            LEFT JOIN user u ON u.name = m.atendente
+            WHERE 1=1 {filters}
+            GROUP BY m.atendente, u.filial, u.setor, m.motivo
+            ORDER BY m.atendente, m.motivo
         """)
         rows = db_sql.session.execute(sql, params).fetchall()
 
-        import math
-        result = []
+        atendentes = {}
         for row in rows:
-            total = row[3] or 0
-            promotores = row[5] or 0
-            detratores = row[7] or 0
-            nps_score = round(((promotores - detratores) / total) * 100) if total > 0 else 0
-            # Pontuação combinada: equilibra NPS com volume de votos
-            combined_score = nps_score * math.log(total + 1)
-            result.append({
-                'atendente': row[0] or '-',
-                'filial': row[1] or '-',
-                'setor': row[2] or '-',
-                'total_votos': total,
-                'media_nota': round(row[4] or 0, 1),
-                'promotores': promotores,
-                'neutros': row[6] or 0,
-                'detratores': detratores,
-                'nps_score': nps_score,
-                'combined_score': round(combined_score, 1)
-            })
-        # Ordena por pontuação combinada (NPS × log(votos+1))
-        result.sort(key=lambda x: -x['combined_score'])
+            atendente = row[0]
+            filial = row[1]
+            setor = row[2]
+            motivo = row[3]
+            qtd = row[4]
+
+            if atendente not in atendentes:
+                atendentes[atendente] = {
+                    'atendente': atendente,
+                    'filial': filial,
+                    'setor': setor,
+                    'vendas': 0,
+                    'orcamentos': 0,
+                    'outros': 0,
+                    'total': 0
+                }
+            
+            a = atendentes[atendente]
+            a['total'] += qtd
+            if motivo == 'Venda':
+                a['vendas'] += qtd
+            elif motivo == 'Orçamento':
+                a['orcamentos'] += qtd
+            else:
+                a['outros'] += qtd
+
+        result = list(atendentes.values())
+        result.sort(key=lambda x: x['total'], reverse=True)
+
         return jsonify({'success': True, 'data': result}), 200
     except Exception as e:
         import traceback
