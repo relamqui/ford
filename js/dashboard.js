@@ -2215,7 +2215,7 @@ function updateAttendanceBar(contact) {
   } else if (isAssignedToMe) {
     // Eu estou atendendo — input liberado
     info.innerHTML = `<span class="att-status-dot active"></span> <span>Você está atendendo este chat</span>`;
-    actions.innerHTML = `<button class="btn-finalizar" onclick="releaseChat()">✖ Finalizar</button>`;
+    actions.innerHTML = `<button class="btn-finalizar" onclick="openFinalizarAtendimentoModal()">✖ Finalizar</button>`;
     if (inputBar) inputBar.style.display = 'flex';
     if (inputLocked) inputLocked.style.display = 'none';
     const btnTransfer = document.getElementById('btnTransferChat');
@@ -2264,13 +2264,22 @@ async function assignChat() {
   }
 }
 
-async function releaseChat() {
+async function releaseChat(motivo = null, detalhes = null) {
   if (!currentChat) return;
   const token = localStorage.getItem('wp_crm_token');
   try {
+    const payload = {};
+    if (motivo) {
+      payload.motivo = motivo;
+      payload.detalhes = detalhes;
+    }
     const res = await fetch(`${API_URL}/api/contacts/${currentChat.id}/release`, {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: Object.keys(payload).length > 0 ? JSON.stringify(payload) : undefined
     });
     const data = await res.json();
     if (res.ok) {
@@ -3100,3 +3109,38 @@ setView = function(view) {
   }
 };
 
+// Modal Finalizar Atendimento Functions
+function openFinalizarAtendimentoModal() {
+  document.getElementById('finalizarAtendimentoModal').style.display = 'flex';
+  document.getElementById('motivoFinalizacao').value = '';
+  document.getElementById('motivoDetalhes').value = '';
+  document.getElementById('motivoDetalhesContainer').style.display = 'none';
+}
+
+function closeFinalizarAtendimentoModal() {
+  document.getElementById('finalizarAtendimentoModal').style.display = 'none';
+}
+
+function toggleMotivoDetalhes() {
+  const select = document.getElementById('motivoFinalizacao');
+  const container = document.getElementById('motivoDetalhesContainer');
+  if (select.value === 'Outro') {
+    container.style.display = 'block';
+  } else {
+    container.style.display = 'none';
+  }
+}
+
+function confirmFinalizarAtendimento() {
+  const select = document.getElementById('motivoFinalizacao');
+  const motivo = select.value;
+  const detalhes = document.getElementById('motivoDetalhes').value;
+  
+  if (!motivo) {
+    showToast('Por favor, selecione um motivo.');
+    return;
+  }
+  
+  closeFinalizarAtendimentoModal();
+  releaseChat(motivo, detalhes);
+}

@@ -228,6 +228,16 @@ class Entrega(db_sql.Model):
     codigo_verificacao = db_sql.Column(db_sql.String(20), nullable=True)
     entregador_id = db_sql.Column(db_sql.Integer, nullable=True)
 
+class MotivoFinalizacao(db_sql.Model):
+    __tablename__ = 'motivo_finalizacao'
+    id = db_sql.Column(db_sql.Integer, primary_key=True, autoincrement=True)
+    contact_id = db_sql.Column(db_sql.String(150), nullable=True)
+    numero_cliente = db_sql.Column(db_sql.String(50), nullable=True)
+    atendente = db_sql.Column(db_sql.String(150), nullable=True)
+    motivo = db_sql.Column(db_sql.String(50), nullable=False)
+    detalhes = db_sql.Column(db_sql.Text, nullable=True)
+    criado_em = db_sql.Column(db_sql.DateTime, default=get_now)
+
 # ─── Utils ──────────────────────────────────────────────────────────────────
 def normalize_br_phone(phone_str):
     if not phone_str: return ""
@@ -3852,12 +3862,28 @@ def release_chat(id):
     if not contact:
         return jsonify({'error': 'Contato não encontrado'}), 404
     
+    data = request.get_json(silent=True) or {}
+    motivo = data.get('motivo')
+    detalhes = data.get('detalhes')
+
+    
     # Apenas o atendente atual ou admin podem finalizar
     if contact.assigned_to and contact.assigned_to != request.user['id'] and request.user.get('role') != 'admin':
         return jsonify({'error': 'Apenas o atendente atual pode finalizar o atendimento'}), 403
     
     user = User.query.get(request.user['id'])
     old_name = contact.assigned_name or user.name
+
+    if motivo:
+        novo_motivo = MotivoFinalizacao(
+            contact_id=contact.id,
+            numero_cliente=contact.phone,
+            atendente=user.name,
+            motivo=motivo,
+            detalhes=detalhes
+        )
+        db_sql.session.add(novo_motivo)
+
     contact.assigned_to = None
     contact.assigned_name = None
     
