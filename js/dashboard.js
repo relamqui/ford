@@ -2283,7 +2283,7 @@ function updateAttendanceBar(contact) {
       document.getElementById('inputLockedText').textContent = 'Clique em "Atender" para começar a responder';
     }
     const btnTransfer = document.getElementById('btnTransferChat');
-    if (btnTransfer) btnTransfer.style.display = 'none';
+    if (btnTransfer) btnTransfer.style.display = 'flex';
   } else if (isAssignedToMe) {
     // Eu estou atendendo — input liberado
     info.innerHTML = `<span class="att-status-dot active"></span> <span>Você está atendendo este chat</span>`;
@@ -2306,7 +2306,7 @@ function updateAttendanceBar(contact) {
       document.getElementById('inputLockedText').textContent = `Chat sendo atendido por ${contact.assigned_name}`;
     }
     const btnTransfer = document.getElementById('btnTransferChat');
-    if (btnTransfer) btnTransfer.style.display = 'none';
+    if (btnTransfer) btnTransfer.style.display = 'flex';
   }
 }
 
@@ -2689,31 +2689,35 @@ async function deleteCurrentChat() {
   }
 }
 
-// ─── Transferência de Chat (Admin) ──────────────────────────────────────────
+// ─── Transferência de Chat ──────────────────────────────────────────────────
 async function openTransferModal() {
   if (!currentChat) return;
   document.getElementById('transferChatModal').style.display = 'flex';
-  document.getElementById('transferSetorSelect').innerHTML = '<option value="">Selecione uma filial primeiro</option>';
-  
-  // Carregar filiais do backend
-  const select = document.getElementById('transferFilialSelect');
-  select.innerHTML = '<option value="">Carregando...</option>';
+
+  const select = document.getElementById('transferAtendentSelect');
+  select.innerHTML = '<option value="">Carregando atendentes...</option>';
+
   try {
-    const res = await fetch(`${API_URL}/api/admin/filiais?action=transfer`, {
+    const res = await fetch(`${API_URL}/api/atendentes`, {
       headers: { 'Authorization': `Bearer ${localStorage.getItem('wp_crm_token')}` }
     });
-    const filiais = await res.json();
-    window._allTransferFiliais = filiais;
-    select.innerHTML = '<option value="">Selecione uma filial</option>';
-    filiais.forEach(f => {
+    const atendentes = await res.json();
+    const user = JSON.parse(localStorage.getItem('wp_crm_user') || '{}');
+
+    select.innerHTML = '<option value="">Selecione um atendente</option>';
+    atendentes.forEach(a => {
+      // Não exibe o próprio usuário logado na lista
+      if (a.id === user.id) return;
       const opt = document.createElement('option');
-      opt.value = f.id;
-      opt.textContent = f.name;
+      opt.value = a.id;
+      const dispBadge = a.disponivel !== false ? '🟢' : '🔴';
+      const filialSetor = [a.filial, a.setor].filter(Boolean).join(' / ');
+      opt.textContent = `${dispBadge} ${a.name}${filialSetor ? ' — ' + filialSetor : ''}`;
       select.appendChild(opt);
     });
   } catch(e) {
     console.error(e);
-    select.innerHTML = '<option value="">Erro ao carregar</option>';
+    select.innerHTML = '<option value="">Erro ao carregar atendentes</option>';
   }
 }
 
@@ -2721,77 +2725,40 @@ function closeTransferModal() {
   document.getElementById('transferChatModal').style.display = 'none';
 }
 
-async function loadSetoresForTransfer() {
-  const filialId = document.getElementById('transferFilialSelect').value;
-  const select = document.getElementById('transferSetorSelect');
-  if (!filialId) {
-    select.innerHTML = '<option value="">Selecione uma filial primeiro</option>';
+async function confirmTransferChat() {
+  const select = document.getElementById('transferAtendentSelect');
+  const userId = select.value;
+  if (!userId || !currentChat) {
+    showToast('Selecione um atendente para transferir.');
     return;
   }
-  select.innerHTML = '<option value="">Carregando...</option>';
-  try {
-    const res = await fetch(`${API_URL}/api/admin/setores?action=transfer`, {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('wp_crm_token')}` }
-    });
-    const setores = await res.json();
-    const filtered = setores.filter(s => s.filial_id == filialId);
-    select.innerHTML = '<option value="">Selecione um setor</option>';
-    filtered.forEach(s => {
-      const opt = document.createElement('option');
-      opt.value = s.id;
-      opt.textContent = s.name;
-      select.appendChild(opt);
-    });
-  } catch(e) {
-    console.error(e);
-    select.innerHTML = '<option value="">Erro ao carregar</option>';
-  }
-}
+  const nomeAtendente = select.options[select.selectedIndex].text;
 
-async function confirmTransferChat() {
-  const filialSelect = document.getElementById('transferFilialSelect');
-  const setorSelect = document.getElementById('transferSetorSelect');
-  const filialId = filialSelect.value;
-  const setorId = setorSelect.value;
-  
-  if (!filialId || !setorId || !currentChat) return;
-  
-  const filialName = filialSelect.options[filialSelect.selectedIndex].text;
-  const setorName = setorSelect.options[setorSelect.selectedIndex].text;
-  
   try {
     const res = await fetch(`${API_URL}/api/chat/transfer`, {
       method: 'POST',
-      headers: { 
+      headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${localStorage.getItem('wp_crm_token')}`
       },
       body: JSON.stringify({
         contact_id: currentChat.id,
-        filial: filialName,
-        setor: setorName
+        user_id: parseInt(userId)
       })
     });
-    
+
     const data = await res.json();
     if (res.ok) {
       showToast('Conversa transferida com sucesso!');
       closeTransferModal();
-      
-      // Opcional: remover atribuição atual localmente
-      currentChat.assigned_to = null;
-      currentChat.assigned_name = null;
-      
-      const tagStr = `${filialName}:${setorName}`;
+
+      // Atualiza localmente
+      currentChat.assigned_to = data.assigned_to;
+      currentChat.assigned_name = data.assigned_name;
       if (!currentChat.tags) currentChat.tags = [];
-      
-      // Remover tag Atendente localmente para refletir logo a interface
       currentChat.tags = currentChat.tags.filter(t => typeof t === 'string' && !t.toLowerCase().startsWith('atendente:'));
-      
-      if (!currentChat.tags.includes(tagStr)) {
-          currentChat.tags.push(tagStr);
-      }
-      
+      if (data.atendente_tag) currentChat.tags.push(data.atendente_tag);
+
       updateAttendanceBar(currentChat);
       updateContactDetails(currentChat);
       renderChatList(getFilteredContacts());
@@ -2799,10 +2766,9 @@ async function confirmTransferChat() {
       showToast(data.error || 'Erro ao transferir');
     }
   } catch(e) {
-    console.error(e);
-    showToast('Erro de conexão ao transferir');
+    console.error('Erro ao transferir chat:', e);
+    showToast('Erro ao transferir. Verifique sua conexão.');
   }
-}
 
 // ─── Envio de Localização ─────────────────────────────────────────────────────
 async function sendLocationMessage() {

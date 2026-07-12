@@ -4209,140 +4209,105 @@ def api_delete_chat(contact_id):
         db_sql.session.rollback()
         return jsonify({'error': str(e), 'success': False}), 500
 
+@app.route('/api/atendentes', methods=['GET'])
+@auth_required
+def list_atendentes():
+    """Lista todos os atendentes (role='user') para uso na transferência de chats."""
+    users = User.query.filter_by(role='user').order_by(User.name).all()
+    result = []
+    for u in users:
+        result.append({
+            'id': u.id,
+            'name': u.name,
+            'email': u.email,
+            'filial': u.filial,
+            'setor': u.setor,
+            'disponivel': u.disponivel if u.disponivel is not None else True
+        })
+    return jsonify(result)
+
+
 @app.route('/api/chat/transfer', methods=['POST'])
 @auth_required
 def chat_transfer():
     data = request.json
     contact_id = data.get('contact_id')
-    filial = data.get('filial')
-    setor = data.get('setor')
-    
-    if not contact_id or not filial or not setor:
-        return jsonify({'error': 'Parâmetros inválidos (contact_id, filial, setor são obrigatórios)'}), 400
-        
+    target_user_id = data.get('user_id')
+
+    if not contact_id or not target_user_id:
+        return jsonify({'error': 'Parâmetros inválidos (contact_id e user_id são obrigatórios)'}), 400
+
     contact = Contact.query.get(contact_id)
     if not contact:
         return jsonify({'error': 'Contato não encontrado'}), 404
-        
-    user = User.query.get(request.user['id'])
-    
-    # Bloquear transferência se chat está sendo atendido por outra pessoa
-    if contact.assigned_to and contact.assigned_to != user.id:
-        return jsonify({'error': 'Este chat já está sendo atendido por outra pessoa'}), 403
-        
-    # Regra removida: Todos os usuários podem transferir para qualquer filial e setor
-    # if user.role == 'user':
-    #     if not user.filial or user.filial != filial:
-    #         return jsonify({'error': 'Você só pode transferir para a sua própria filial'}), 403
-        
-    # Atualiza as tags para refletir o novo setor de destino
-    # MANTÉM a tag do setor de origem (do usuário que fez a transferência)
-    # para que o setor de origem ainda possa visualizar/acompanhar o chat
-    tag_destino = f"{filial}:{setor}"
-    tag_origem = None
-    if user.filial and user.setor:
-        tag_origem = f"{user.filial}:{user.setor}"
-    
+
+    target_user = User.query.get(target_user_id)
+    if not target_user:
+        return jsonify({'error': 'Atendente de destino não encontrado'}), 404
+
+    # Atualiza tags: remove BOT e tags de atendente antigas, adiciona a nova
     current_tags = list(contact.tags or [])
-    # Remove apenas tags de atendente e BOT; mantém outras tags filial:setor existentes
     new_tags = [
         t for t in current_tags
         if isinstance(t, str)
         and not t.strip().lower().startswith('atendente:')
         and t.strip().upper() != 'BOT'
     ]
-    # Adiciona a tag de destino se ainda não existir
-    if tag_destino not in new_tags:
-        new_tags.append(tag_destino)
-    # Garante que a tag de origem do usuário que transferiu está presente (para leitura)
-    if tag_origem and tag_origem not in new_tags:
-        new_tags.append(tag_origem)
-    
+    atendente_tag = f"Atendente: {target_user.email or target_user.name}"
+    new_tags.append(atendente_tag)
+    if target_user.email and target_user.email not in new_tags:
+        new_tags.append(target_user.email)
+
     contact.tags = new_tags
     flag_modified(contact, 'tags')
-        
-    # Liberar o atendimento (remover assigned_to)
-    if contact.assigned_to:
-        contact.assigned_to = None
-        contact.assigned_name = None
-    
-    db_sql.session.commit()
-    
-    # Registra no SLA que o chat entrou na fila de transferência
-    track_sla_event(contact.phone, filial=filial, setor=setor, event_type='QUEUE_ENTER')
 
-    # Ao transferir: reinicia o timer de espera (contagem começa do zero a partir da transferência)
+    # Atribui diretamente ao atendente de destino
+    contact.assigned_to = target_user.id
+    contact.assigned_name = target_user.name
+
+    db_sql.session.commit()
+
+    # Atualiza registro de AtendimentoChat se existir
     try:
         agora_tr_iso = get_now().isoformat()
         atend_chat_tr = AtendimentoChat.query.filter_by(numero=contact.phone).first()
         if atend_chat_tr:
-            atend_chat_tr.status = 'atendente'      # mantém 'atendente' para o monitor rastrear
-            atend_chat_tr.atendente = None           # sem atendente fixo (aguardando novo)
-            atend_chat_tr.atendente_desde = agora_tr_iso  # timer reinicia agora
+            atend_chat_tr.status = 'atendente'
+            atend_chat_tr.atendente = target_user.name
+            atend_chat_tr.atendente_desde = agora_tr_iso
             atend_chat_tr.alerta_20min_enviado = False
             atend_chat_tr.alerta_40min_enviado = False
             db_sql.session.commit()
-            print(f"[TRANSFER] Timer de espera reiniciado para {contact.phone} → {filial}/{setor}")
+            print(f"[TRANSFER] Chat {contact.phone} transferido para '{target_user.name}'")
     except Exception as e_tr:
         db_sql.session.rollback()
-        print(f"Erro ao resetar alertas na transferência: {e_tr}")
+        print(f"Erro ao atualizar AtendimentoChat na transferência: {e_tr}")
 
-    # Cria novo registro de espera para a transferência (timer reinicia do zero)
-    try:
-        novo_te = TempoEspera(
-            numero_cliente=contact.phone,
-            setor_filial=f"{setor}:{filial}" if filial else setor,
-            inicio=get_now()
-        )
-        db_sql.session.add(novo_te)
-        db_sql.session.commit()
-        print(f"[TEMPO_ESPERA] Novo registro criado para transferência de {contact.phone} → {filial}/{setor}")
-    except Exception as e_te_tr:
-        db_sql.session.rollback()
-        print(f"[TEMPO_ESPERA] Erro ao criar registro na transferência: {e_te_tr}")
-
-    n8n_webhook_url = "https://n8n-n8n.ioms5g.easypanel.host/webhook/chamar"
-    
-    payload = {
-        "numero": contact.phone,
-        "filial": filial,
-        "setor": setor
+    # Emite evento para todos os clientes atualizarem
+    payload_socket = {
+        'contact_id': contact.id,
+        'assigned_to': target_user.id,
+        'assigned_name': target_user.name,
+        'tags': list(contact.tags or [])
     }
-    
-    # Dispara o webhook em background ou após o commit, para que o N8N leia o banco já atualizado
-    try:
-        res = requests.post(n8n_webhook_url, json=payload, timeout=10)
-        res.raise_for_status()
-    except Exception as e:
-        print(f"Erro ao disparar webhook de transferência n8n: {e}")
-        return jsonify({'error': 'Erro ao comunicar com n8n (mas chat foi transferido)'}), 500
-    
-    # Emite evento para os clientes atualizarem
+    socketio.emit('chat_assignment', payload_socket, room=f"instance_{contact.instance or 'unknown'}")
+    socketio.emit('chat_assignment', payload_socket, room='admin')
     socketio.emit('chat_tags_updated', {
         'id': contact.id,
         'tags': list(contact.tags or [])
     }, room=f"instance_{contact.instance or 'unknown'}")
-    
     socketio.emit('chat_tags_updated', {
         'id': contact.id,
         'tags': list(contact.tags or [])
     }, room='admin')
-    
-    socketio.emit('chat_assignment', {
-        'contact_id': contact.id,
-        'assigned_to': None,
-        'assigned_name': None,
-        'tags': list(contact.tags or [])
-    }, room=f"instance_{contact.instance or 'unknown'}")
-    
-    socketio.emit('chat_assignment', {
-        'contact_id': contact.id,
-        'assigned_to': None,
-        'assigned_name': None,
-        'tags': list(contact.tags or [])
-    }, room='admin')
-    
-    return jsonify({'success': True})
+
+    return jsonify({
+        'success': True,
+        'assigned_to': target_user.id,
+        'assigned_name': target_user.name,
+        'atendente_tag': atendente_tag
+    })
+
 
 @app.route('/api/media/<media_type>')
 def stream_media(media_type):
