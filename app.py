@@ -66,8 +66,8 @@ from botocore.client import Config
 from botocore.exceptions import ClientError
 
 MINIO_ENDPOINT    = os.getenv('MINIO_ENDPOINT',    'https://teste-minio.ioms5g.easypanel.host')
-MINIO_ACCESS_KEY  = os.getenv('MINIO_ACCESS_KEY',  'To4ZBFYPPODymZeSbV4S')
-MINIO_SECRET_KEY  = os.getenv('MINIO_SECRET_KEY',  'LYXlmv4dgfQVV8HTH2cbc1M0EvvlFfvVipnljjLs')
+MINIO_ACCESS_KEY  = os.getenv('MINIO_ACCESS_KEY',  'To4ZBFYPPOdymZeSbV4S')
+MINIO_SECRET_KEY  = os.getenv('MINIO_SECRET_KEY',  'LYXimv4dgfQVV8HTH2cbc1M0EvvlFfvVipnjjjLs')
 MINIO_BUCKET      = os.getenv('MINIO_BUCKET',       'ford-wp')
 
 def _get_minio_client():
@@ -82,6 +82,7 @@ def _get_minio_client():
 
 def minio_upload(file_bytes: bytes, object_key: str, content_type: str = 'application/octet-stream') -> bool:
     """Faz upload de bytes para o MinIO. Retorna True em caso de sucesso."""
+    import sys
     try:
         s3 = _get_minio_client()
         s3.put_object(
@@ -91,18 +92,29 @@ def minio_upload(file_bytes: bytes, object_key: str, content_type: str = 'applic
             ContentType=content_type,
         )
         print(f"[MinIO] Upload OK: {object_key} ({len(file_bytes)} bytes)")
+        sys.stdout.flush()
         return True
     except Exception as e:
         print(f"[MinIO] Erro no upload de {object_key}: {e}")
+        sys.stdout.flush()
         return False
 
 def minio_exists(object_key: str) -> bool:
     """Verifica se um objeto existe no MinIO."""
+    import sys
     try:
         s3 = _get_minio_client()
         s3.head_object(Bucket=MINIO_BUCKET, Key=object_key)
         return True
-    except ClientError:
+    except ClientError as e:
+        if e.response['Error']['Code'] == '404':
+            return False
+        print(f"[MinIO] Erro ClientError ao verificar {object_key}: {e}")
+        sys.stdout.flush()
+        return False
+    except Exception as e:
+        print(f"[MinIO] Erro Exception ao verificar {object_key}: {e}")
+        sys.stdout.flush()
         return False
 
 def minio_presigned_url(object_key: str, expiry: int = 3600) -> str | None:
@@ -4404,9 +4416,9 @@ def stream_media(media_type):
 
         # ── 1. Verificar no MinIO (prioridade máxima) ──────────────────────────
         # Tentar com short_id e msg_id completo (qualquer extensão conhecida)
-        _ext_map = {'image': ['.jpeg', '.jpg', '.png', '.webp', '.gif'],
-                    'video': ['.mp4', '.mov'],
-                    'audio': ['.oga', '.ogg', '.webm', '.mp3'],
+        _ext_map = {'image': ['.jpeg', '.jpg', '.png', '.webp', '.gif', '.bin', ''],
+                    'video': ['.mp4', '.mov', '.bin', ''],
+                    'audio': ['.oga', '.ogg', '.webm', '.mp3', '.bin', ''],
                     'document': ['.pdf', '.docx', '.xlsx', '.bin', '']}
         _exts = _ext_map.get(media_type, [''])
         minio_key_found = None
