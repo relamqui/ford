@@ -60,6 +60,66 @@ DATA_DIR = os.path.join(os.getcwd(), 'data')
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
 
+# ─── Configuração MinIO (S3-compatible) ──────────────────────────────────────
+import boto3
+from botocore.client import Config
+from botocore.exceptions import ClientError
+
+MINIO_ENDPOINT    = os.getenv('MINIO_ENDPOINT',    'https://teste-minio.ioms5g.easypanel.host')
+MINIO_ACCESS_KEY  = os.getenv('MINIO_ACCESS_KEY',  'To4ZBFYPPODymZeSbV4S')
+MINIO_SECRET_KEY  = os.getenv('MINIO_SECRET_KEY',  'LYXlmv4dgfQVV8HTH2cbc1M0EvvlFfvVipnljjLs')
+MINIO_BUCKET      = os.getenv('MINIO_BUCKET',       'ford-wp')
+
+def _get_minio_client():
+    return boto3.client(
+        's3',
+        endpoint_url=MINIO_ENDPOINT,
+        aws_access_key_id=MINIO_ACCESS_KEY,
+        aws_secret_access_key=MINIO_SECRET_KEY,
+        config=Config(signature_version='s3v4'),
+        region_name='us-east-1'
+    )
+
+def minio_upload(file_bytes: bytes, object_key: str, content_type: str = 'application/octet-stream') -> bool:
+    """Faz upload de bytes para o MinIO. Retorna True em caso de sucesso."""
+    try:
+        s3 = _get_minio_client()
+        s3.put_object(
+            Bucket=MINIO_BUCKET,
+            Key=object_key,
+            Body=file_bytes,
+            ContentType=content_type,
+        )
+        print(f"[MinIO] Upload OK: {object_key} ({len(file_bytes)} bytes)")
+        return True
+    except Exception as e:
+        print(f"[MinIO] Erro no upload de {object_key}: {e}")
+        return False
+
+def minio_exists(object_key: str) -> bool:
+    """Verifica se um objeto existe no MinIO."""
+    try:
+        s3 = _get_minio_client()
+        s3.head_object(Bucket=MINIO_BUCKET, Key=object_key)
+        return True
+    except ClientError:
+        return False
+
+def minio_presigned_url(object_key: str, expiry: int = 3600) -> str | None:
+    """Gera uma URL temporária (presigned) para acessar o objeto. Expira em `expiry` segundos."""
+    try:
+        s3 = _get_minio_client()
+        url = s3.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': MINIO_BUCKET, 'Key': object_key},
+            ExpiresIn=expiry
+        )
+        return url
+    except Exception as e:
+        print(f"[MinIO] Erro ao gerar presigned URL para {object_key}: {e}")
+        return None
+# ─────────────────────────────────────────────────────────────────────────────
+
 DB_PATH = os.environ.get('DB_PATH', os.path.join(DATA_DIR, 'db.json'))
 DATABASE_URL = os.environ.get('DATABASE_URL', '')
 
@@ -2926,10 +2986,8 @@ def webhook():
                         if media_b64:
                             import base64
                             file_bytes_saved = base64.b64decode(media_b64)
-                            with open(filepath, 'wb') as f:
-                                f.write(file_bytes_saved)
                             saved_locally = True
-                            print(f"[Media] Arquivo {filepath} salvo localmente via Base64 do webhook")
+                            print(f"[Media] Bytes obtidos via Base64 do webhook ({len(file_bytes_saved)} bytes)")
                         elif media_url:
                             # Corrige URL caso venha localhost
                             if media_url.startswith('http://localhost') or media_url.startswith('http://127.0.0.1'):
@@ -2940,14 +2998,12 @@ def webhook():
                             dl_res = requests.get(media_url, headers=get_waha_headers(), timeout=15)
                             if dl_res.status_code == 200:
                                 file_bytes_saved = dl_res.content
-                                with open(filepath, 'wb') as f:
-                                    f.write(file_bytes_saved)
                                 saved_locally = True
-                                print(f"[Media] Arquivo {filepath} salvo localmente via URL {media_url} do webhook")
+                                print(f"[Media] Bytes obtidos via URL {media_url} ({len(file_bytes_saved)} bytes)")
                             else:
                                 print(f"[Media] Falha ao baixar da URL {media_url}: HTTP {dl_res.status_code}")
                     except Exception as e:
-                        print(f"[Media] Erro ao salvar media via payload: {e}")
+                        print(f"[Media] Erro ao obter bytes da media via payload: {e}")
                         
                     # Fallback Agressivo: Se falhou ao salvar pela payload, forçar busca via GET /api/files
                     if not saved_locally:
@@ -2978,23 +3034,35 @@ def webhook():
                                         real_res = requests.get(real_url, headers=get_waha_headers(), timeout=15)
                                         if real_res.status_code == 200:
                                             file_bytes_saved = real_res.content
-                                with open(filepath, 'wb') as f:
-                                    f.write(file_bytes_saved)
                                 saved_locally = True
-                                print(f"[Media] Arquivo {filepath} salvo via FALLBACK Agressivo (GET /api/files)")
+                                print(f"[Media] Bytes obtidos via FALLBACK Agressivo (GET /api/files)")
                             else:
                                 print(f"[Media] FALLBACK Agressivo falhou: HTTP {dl_res.status_code}")
                         except Exception as e:
                             print(f"[Media] Erro no FALLBACK Agressivo: {e}")
                     
-                    # Criar cópia com o ID completo (para o proxy encontrar por ambos os nomes)
-                    if saved_locally and filepath_full and file_bytes_saved:
-                        try:
-                            with open(filepath_full, 'wb') as f:
-                                f.write(file_bytes_saved)
-                        except Exception:
-                            pass  # Não é crítico, o short_id já foi salvo
+                    # ── Upload para MinIO ──────────────────────────────────────
+                    if saved_locally and file_bytes_saved:
+                        # Determinar content_type
+                        _mime_map = {
+                            'image': 'image/jpeg', 'video': 'video/mp4',
+                            'audio': 'audio/ogg', 'ptt': 'audio/ogg',
+                            'voice': 'audio/ogg', 'document': 'application/octet-stream'
+                        }
+                        upload_ct = _mime_map.get(msg_type, 'application/octet-stream')
+                        if media_mimetype:
+                            upload_ct = media_mimetype.split(';')[0].strip()
+                        
+                        # Chave no MinIO: usar short_id + extensão para manter compatibilidade
+                        minio_key = f"{short_id}{ext}"
+                        minio_upload(file_bytes_saved, minio_key, upload_ct)
+                        
+                        # Também salvar ID completo como chave alternativa (sem duplicar bytes se for o mesmo)
+                        if waha_id != short_id:
+                            minio_upload(file_bytes_saved, f"{waha_id}{ext}", upload_ct)
+                    # ──────────────────────────────────────────────────────────
             # -------------------------------------------------------
+
 
             # --- Normalizar JID para 12 dígitos ---
             raw_jid = waha_to if fromMe else waha_from
@@ -4332,20 +4400,42 @@ def stream_media(media_type):
         elif media_type == 'image': content_type = 'image/jpeg'
         elif media_type == 'video': content_type = 'video/mp4'
 
-        # Verificar se o arquivo existe localmente
+        short_id = msg_id.split('_')[-1] if '_' in msg_id else msg_id
+
+        # ── 1. Verificar no MinIO (prioridade máxima) ──────────────────────────
+        # Tentar com short_id e msg_id completo (qualquer extensão conhecida)
+        _ext_map = {'image': ['.jpeg', '.jpg', '.png', '.webp', '.gif'],
+                    'video': ['.mp4', '.mov'],
+                    'audio': ['.oga', '.ogg', '.webm', '.mp3'],
+                    'document': ['.pdf', '.docx', '.xlsx', '.bin', '']}
+        _exts = _ext_map.get(media_type, [''])
+        minio_key_found = None
+        for _cid in [short_id, msg_id]:
+            for _ext in _exts:
+                _candidate = f"{_cid}{_ext}"
+                if minio_exists(_candidate):
+                    minio_key_found = _candidate
+                    break
+            if minio_key_found:
+                break
+        
+        if minio_key_found:
+            presigned = minio_presigned_url(minio_key_found, expiry=3600)
+            if presigned:
+                print(f"[{media_type.capitalize()} Proxy] Redirecionando para MinIO: {minio_key_found}")
+                from flask import redirect
+                return redirect(presigned, code=302)
+        # ──────────────────────────────────────────────────────────────────────
+
+        # ── 2. Fallback: verificar cache local (mídias antigas) ────────────────
         media_dir = os.path.join(DATA_DIR, 'media')
         local_path = os.path.join(media_dir, msg_id)
-        short_id = msg_id.split('_')[-1] if '_' in msg_id else msg_id
         local_path_short = os.path.join(media_dir, short_id)
         
         import glob
         cache_path = None
-        
-        # Busca com glob: primeiro pelo ID completo, depois pelo short_id
-        # Usar glob.escape para lidar com caracteres especiais como @
         matches = glob.glob(glob.escape(local_path) + '.*')
         if os.path.exists(local_path): matches.insert(0, local_path)
-        
         matches_short = glob.glob(glob.escape(local_path_short) + '.*')
         if os.path.exists(local_path_short): matches_short.insert(0, local_path_short)
         
@@ -4377,13 +4467,21 @@ def stream_media(media_type):
             
             with open(cache_path, 'rb') as f:
                 file_bytes = f.read()
+
+            # Oportunisticamente, fazer upload da mídia local para o MinIO para futuras requisições
+            try:
+                _, local_ext = os.path.splitext(cache_path)
+                local_minio_key = f"{short_id}{local_ext}"
+                if not minio_exists(local_minio_key):
+                    minio_upload(file_bytes, local_minio_key, content_type)
+            except Exception:
+                pass
                 
-            # Content-Disposition inline with fallback to attachment for unknown docs
             cd = 'inline' if media_type in ('audio', 'image', 'video', 'document') else 'attachment'
             return Response(file_bytes, mimetype=content_type, headers={'Content-Disposition': cd, 'Accept-Ranges': 'bytes', 'Cache-Control': 'public, max-age=3600'})
+        # ──────────────────────────────────────────────────────────────────────
 
-        short_id = msg_id.split('_')[-1]
-        
+        # ── 3. Fallback final: buscar no WAHA API ──────────────────────────────
         try:
             # 1. Tentar primeiro com o ID completo (Motor Baileys)
             params = {'session': instance, 'messageId': msg_id}
@@ -4462,10 +4560,8 @@ def stream_media(media_type):
                 if ctype_waha and ctype_waha != 'application/octet-stream':
                     content_type = ctype_waha
                     
-            # Salvar no cache local para acelerar futuras requisições (com ambos os IDs)
+            # ── Upload para MinIO após buscar do WAHA ──────────────────────────
             try:
-                os.makedirs(media_dir, exist_ok=True)
-                # Determinar extensão baseada no content_type real
                 import mimetypes as _mt_proxy
                 proxy_ext = _mt_proxy.guess_extension(content_type.split(';')[0].strip()) or ''
                 if not proxy_ext:
@@ -4473,24 +4569,22 @@ def stream_media(media_type):
                     elif media_type == 'image': proxy_ext = '.jpeg'
                     elif media_type == 'video': proxy_ext = '.mp4'
                     elif media_type == 'document': proxy_ext = '.bin'
-                # Salvar com short_id (principal) e com o ID completo
-                for save_path in set([local_path_short + proxy_ext, local_path + proxy_ext]):
-                    try:
-                        with open(save_path, 'wb') as f:
-                            f.write(file_bytes)
-                    except Exception:
-                        pass
-            except Exception as e:
-                pass
+                waha_minio_key = f"{short_id}{proxy_ext}"
+                minio_upload(file_bytes, waha_minio_key, content_type)
+                if msg_id != short_id:
+                    minio_upload(file_bytes, f"{msg_id}{proxy_ext}", content_type)
+            except Exception as minio_e:
+                print(f"[MinIO] Erro ao fazer upload após busca WAHA: {minio_e}")
+            # ──────────────────────────────────────────────────────────────────
             
             return Response(file_bytes, mimetype=content_type,
-
                 headers={'Content-Disposition': 'inline', 'Accept-Ranges': 'bytes',
                          'Cache-Control': 'public, max-age=3600'})
         return jsonify({'error': f'Nao foi possivel buscar {media_type}', 'waha_status': res.status_code}), 502
     except Exception as e:
         print(f"Erro stream_{media_type}: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 # ─── Admin: Media Browser ────────────────────────────────────────────────────
 
