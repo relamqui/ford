@@ -2769,6 +2769,7 @@ async function confirmTransferChat() {
     console.error('Erro ao transferir chat:', e);
     showToast('Erro ao transferir. Verifique sua conexão.');
   }
+}
 
 // ─── Envio de Localização ─────────────────────────────────────────────────────
 async function sendLocationMessage() {
