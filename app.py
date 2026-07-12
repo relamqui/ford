@@ -4942,11 +4942,11 @@ def report_ranking():
         return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
 
 
-@app.route('/api/reports/nps-filiais', methods=['GET'])
+@app.route('/api/reports/motivos-filiais', methods=['GET'])
 @auth_required
 @admin_or_gestor_required
-def report_nps_filiais():
-    """Retorna ranking NPS por Filial e Setor."""
+def report_motivos_filiais():
+    """Retorna agrupamento de motivos de finalização por Filial e Setor."""
     try:
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
@@ -4954,77 +4954,63 @@ def report_nps_filiais():
         filters = ""
         params = {}
         if start_date:
-            filters += " AND (data_voto IS NULL OR data_voto >= :start_date)"
+            filters += " AND (m.criado_em IS NULL OR m.criado_em >= :start_date)"
             params['start_date'] = start_date
         if end_date:
-            filters += " AND (data_voto IS NULL OR data_voto <= :end_date)"
+            filters += " AND (m.criado_em IS NULL OR m.criado_em <= :end_date)"
             params['end_date'] = end_date + ' 23:59:59'
 
         sql = db_sql.text(f"""
-            SELECT filial, setor, atendente,
-                   COUNT(*) as total_votos,
-                   AVG(CAST(SPLIT_PART(voto, ' ', 1) AS INTEGER)) as media_nota,
-                   SUM(CASE WHEN CAST(SPLIT_PART(voto, ' ', 1) AS INTEGER) = 5 THEN 1 ELSE 0 END) as promotores,
-                   SUM(CASE WHEN CAST(SPLIT_PART(voto, ' ', 1) AS INTEGER) = 4 THEN 1 ELSE 0 END) as neutros,
-                   SUM(CASE WHEN CAST(SPLIT_PART(voto, ' ', 1) AS INTEGER) <= 3 THEN 1 ELSE 0 END) as detratores
-            FROM nps_votos
+            SELECT COALESCE(u.filial, 'Sem Filial') as filial,
+                   COALESCE(u.setor, 'Sem Setor') as setor,
+                   m.motivo,
+                   COUNT(*) as qtd
+            FROM motivo_finalizacao m
+            LEFT JOIN "user" u ON u.name = m.atendente
             WHERE 1=1 {filters}
-            GROUP BY filial, setor, atendente
-            ORDER BY filial, setor, media_nota DESC
+            GROUP BY u.filial, u.setor, m.motivo
+            ORDER BY u.filial, u.setor, m.motivo
         """)
         rows = db_sql.session.execute(sql, params).fetchall()
 
-        # Organiza por filial > setor
         filiais = {}
         for row in rows:
-            filial = row[0] or 'Sem Filial'
-            setor = row[1] or 'Sem Setor'
-            total = row[3] or 0
-            promotores = row[5] or 0
-            detratores = row[7] or 0
-            nps = round(((promotores - detratores) / total) * 100) if total > 0 else 0
+            filial = row[0]
+            setor = row[1]
+            motivo = row[2]
+            qtd = row[3]
 
             if filial not in filiais:
-                filiais[filial] = {}
-            if setor not in filiais[filial]:
-                filiais[filial][setor] = {
-                    'total_votos': 0, 'media_nota': 0,
-                    'promotores': 0, 'neutros': 0, 'detratores': 0,
-                    'notas_sum': 0, 'nps': 0
+                filiais[filial] = {'filial': filial, 'setores': {}}
+
+            if setor not in filiais[filial]['setores']:
+                filiais[filial]['setores'][setor] = {
+                    'setor': setor,
+                    'vendas': 0,
+                    'orcamentos': 0,
+                    'outros': 0,
+                    'total': 0
                 }
 
-            s = filiais[filial][setor]
-            s['total_votos'] += total
-            s['notas_sum'] += (row[4] or 0) * total
-            s['promotores'] += promotores
-            s['neutros'] += (row[6] or 0)
-            s['detratores'] += detratores
+            s = filiais[filial]['setores'][setor]
+            s['total'] += qtd
+            if motivo == 'Venda':
+                s['vendas'] += qtd
+            elif motivo == 'Orçamento':
+                s['orcamentos'] += qtd
+            else:
+                s['outros'] += qtd
 
-        # Calcula médias finais por setor
         result = []
-        for filial, setores in filiais.items():
-            setores_list = []
-            for setor, s in setores.items():
-                total = s['total_votos']
-                media = round(s['notas_sum'] / total, 1) if total > 0 else 0
-                nps_score = round(((s['promotores'] - s['detratores']) / total) * 100) if total > 0 else 0
-                setores_list.append({
-                    'setor': setor,
-                    'total_votos': total,
-                    'media_nota': media,
-                    'promotores': s['promotores'],
-                    'neutros': s['neutros'],
-                    'detratores': s['detratores'],
-                    'nps_score': nps_score
-                })
-            setores_list.sort(key=lambda x: -x['nps_score'])
-            result.append({'filial': filial, 'setores': setores_list})
+        for f_name, f_data in filiais.items():
+            f_data['setores'] = list(f_data['setores'].values())
+            result.append(f_data)
         result.sort(key=lambda x: x['filial'])
+
         return jsonify({'success': True, 'data': result}), 200
     except Exception as e:
         import traceback
         return jsonify({'success': False, 'error': str(e), 'trace': traceback.format_exc()}), 500
-
 
 @app.route('/api/reports/motivos-atendentes', methods=['GET'])
 @auth_required
@@ -5319,7 +5305,7 @@ def report_volume_chats_filiais():
         sql_atend = db_sql.text("""
             SELECT COALESCE(u.setor, '-') || ':' || COALESCE(u.filial, '-') as sf, COUNT(*) as qtd
             FROM atendimentos_chat a
-            JOIN "user" u ON u.name = a.atendente
+            JOIN users u ON u.name = a.atendente
             WHERE a.status = 'atendente'
             GROUP BY u.setor, u.filial
         """)
