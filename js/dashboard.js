@@ -3183,3 +3183,27 @@ function confirmFinalizarAtendimento() {
   closeFinalizarAtendimentoModal();
   releaseChat(motivo, detalhes);
 }
+
+// Handle pasting images directly into the message input
+document.addEventListener('DOMContentLoaded', () => {
+  const messageInput = document.getElementById('messageInput');
+  if (messageInput) {
+    messageInput.addEventListener('paste', (event) => {
+      const clipboardData = event.clipboardData || window.clipboardData;
+      if (!clipboardData) return;
+      
+      const items = clipboardData.items;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            sendImageMessage(file);
+            event.preventDefault(); // Prevent default pasting behavior
+            return; // Only handle the first image if multiple are somehow pasted
+          }
+        }
+      }
+    });
+  }
+});
