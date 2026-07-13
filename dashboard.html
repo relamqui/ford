@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" rel="stylesheet" />
   <link rel="stylesheet" href="css/dashboard.css" />
 </head>
 <body>
@@ -542,8 +543,27 @@
   <img id="lightboxImg" class="lightbox-content" src="" />
 </div>
 
+<!-- Modal Cortar Imagem -->
+<div class="modal-overlay" id="imageCropModal" style="display:none" onclick="closeImageCropModal()">
+  <div class="modal-box" style="width: 800px; max-width: 95vw;" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3>Cortar Imagem</h3>
+      <button class="icon-btn" onclick="closeImageCropModal()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div style="padding: 20px; text-align: center;">
+      <div style="max-height: 500px; overflow: hidden; margin-bottom: 15px; display: flex; justify-content: center; align-items: center; background: #111b21; border-radius: 8px;">
+        <img id="imageToCrop" src="" style="max-width: 100%; max-height: 500px; display: block;" />
+      </div>
+      <button class="btn-save-notes" style="width:100%; background: #00a884; color: white; padding: 12px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;" onclick="confirmImageCrop()">Cortar e Enviar</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
 <script src="js/data.js"></script>
 <script src="js/dashboard.js"></script>
 </body>

@@ -2049,7 +2049,7 @@ function handleFileUpload(event) {
   const fileType = file.type;
   
   if (fileType.startsWith('image/')) {
-    sendImageMessage(file);
+    openImageCropModal(file);
   } else if (fileType.startsWith('video/')) {
     sendVideoMessage(file);
   } else {
@@ -3198,7 +3198,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (item.kind === 'file' && item.type.startsWith('image/')) {
           const file = item.getAsFile();
           if (file) {
-            sendImageMessage(file);
+            openImageCropModal(file);
             event.preventDefault(); // Prevent default pasting behavior
             return; // Only handle the first image if multiple are somehow pasted
           }
@@ -3207,3 +3207,61 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
+
+// ─── Image Crop Logic ────────────────────────────────────────────────────────
+let currentCropper = null;
+
+function openImageCropModal(file) {
+  const modal = document.getElementById('imageCropModal');
+  const imageToCrop = document.getElementById('imageToCrop');
+  
+  if (currentCropper) {
+    currentCropper.destroy();
+    currentCropper = null;
+  }
+  
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    imageToCrop.src = e.target.result;
+    modal.style.display = 'flex';
+    
+    // Iniciar cropper
+    currentCropper = new Cropper(imageToCrop, {
+      viewMode: 1,
+      dragMode: 'move',
+      autoCropArea: 0.9,
+      restore: false,
+      guides: true,
+      center: true,
+      highlight: false,
+      cropBoxMovable: true,
+      cropBoxResizable: true,
+      toggleDragModeOnDblclick: false,
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+function closeImageCropModal() {
+  document.getElementById('imageCropModal').style.display = 'none';
+  if (currentCropper) {
+    currentCropper.destroy();
+    currentCropper = null;
+  }
+}
+
+function confirmImageCrop() {
+  if (!currentCropper) return;
+  
+  currentCropper.getCroppedCanvas({
+    maxWidth: 1920,
+    maxHeight: 1920,
+  }).toBlob((blob) => {
+    if (blob) {
+      // Cria um File a partir do Blob
+      const croppedFile = new File([blob], "cropped_image.jpg", { type: "image/jpeg", lastModified: new Date().getTime() });
+      sendImageMessage(croppedFile);
+      closeImageCropModal();
+    }
+  }, 'image/jpeg', 0.85);
+}
