@@ -1451,6 +1451,10 @@ def manage_user(user_id):
     if request.method == 'DELETE':
         if user.role == 'admin':
             return jsonify({'error': 'Não permitido excluir admin'}), 403
+        # Remove registros relacionados antes de deletar o usuário (evita erro de FK)
+        PushSubscription.query.filter_by(user_id=user.id).delete()
+        DriverLocation.query.filter_by(user_id=user.id).delete()
+        Contact.query.filter_by(assigned_to=user.id).update({'assigned_to': None, 'assigned_name': None})
         db_sql.session.delete(user)
         db_sql.session.commit()
         return jsonify({'success': True})
@@ -1827,6 +1831,10 @@ def gestor_update_user(user_id):
         return jsonify({'success': True})
 
     if request.method == 'DELETE':
+        # Remove registros relacionados antes de deletar o usuário (evita erro de FK)
+        PushSubscription.query.filter_by(user_id=target_user.id).delete()
+        DriverLocation.query.filter_by(user_id=target_user.id).delete()
+        Contact.query.filter_by(assigned_to=target_user.id).update({'assigned_to': None, 'assigned_name': None})
         db_sql.session.delete(target_user)
         db_sql.session.commit()
         return jsonify({'success': True})
