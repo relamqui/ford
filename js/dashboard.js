@@ -1,4 +1,4 @@
-﻿// js/dashboard.js 
+// js/dashboard.js 
 
 // ─── State ───────────────────────────────────────────────────────────────────
 const API_URL = window.location.origin;
@@ -2629,7 +2629,11 @@ function startNewChat() {
 }
 
 function logout() {
+  const quickReplies = localStorage.getItem('wp_crm_quick_replies');
   localStorage.clear();
+  if (quickReplies) {
+    localStorage.setItem('wp_crm_quick_replies', quickReplies);
+  }
   sessionStorage.clear();
   window.location.href = 'index.html';
 }

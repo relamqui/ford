@@ -4348,6 +4348,17 @@ def chat_transfer():
     if not target_user:
         return jsonify({'error': 'Atendente de destino não encontrado'}), 404
 
+    # Identifica o atendente anterior para remover suas tags específicas
+    tags_to_remove = []
+    old_user = User.query.get(contact.assigned_to) if contact.assigned_to else None
+    if old_user:
+        if old_user.email:
+            tags_to_remove.append(old_user.email.strip())
+        if old_user.name:
+            tags_to_remove.append(old_user.name.strip())
+    if contact.assigned_name:
+        tags_to_remove.append(contact.assigned_name.strip())
+
     # Atualiza tags: remove BOT e tags de atendente antigas, adiciona a nova
     current_tags = list(contact.tags or [])
     new_tags = [
@@ -4355,6 +4366,7 @@ def chat_transfer():
         if isinstance(t, str)
         and not t.strip().lower().startswith('atendente:')
         and t.strip().upper() != 'BOT'
+        and t.strip() not in tags_to_remove
     ]
     atendente_tag = f"Atendente: {target_user.email or target_user.name}"
     new_tags.append(atendente_tag)
