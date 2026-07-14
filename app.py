@@ -1112,37 +1112,30 @@ def add_bot_tag():
         print(f"[BOT/TAGS] Atendentes disponíveis para filial='{filial}' setor='{setor}': {[u.name for u in users_query]}")
         
         if users_query:
-            selected_user = None
+            import random
             
-            # Ordena a lista de usuários para garantir a sequência fixa (pelo ID)
-            users_query.sort(key=lambda u: u.id)
+            # Obtem a contagem de atendimentos ativos para todos os usuários
+            active_counts = dict(
+                db_sql.session.query(
+                    Contact.assigned_to, db_sql.func.count(Contact.id)
+                ).filter(Contact.assigned_to.isnot(None)).group_by(Contact.assigned_to).all()
+            )
             
-            # Identificador único para a fila baseada na filial e setor
-            queue_key = f"last_assigned_bot_fila_{filial}_{setor}"
-            last_assigned_setting = Setting.query.get(queue_key)
-            last_assigned_id = int(last_assigned_setting.value) if last_assigned_setting and last_assigned_setting.value.isdigit() else None
+            # Encontra o menor número de atendimentos ativos
+            min_count = float('inf')
+            for u in users_query:
+                count = active_counts.get(u.id, 0)
+                if count < min_count:
+                    min_count = count
             
-            if not last_assigned_id:
-                selected_user = users_query[0]
-            else:
-                # Encontra o índice do último usuário atribuído
-                last_idx = -1
-                for i, u in enumerate(users_query):
-                    if u.id == last_assigned_id:
-                        last_idx = i
-                        break
-                
-                # Pega o próximo. Se for o último ou não achar, volta para o primeiro (0)
-                next_idx = (last_idx + 1) % len(users_query)
-                selected_user = users_query[next_idx]
-                
-            # Atualiza o ID do último atribuído na configuração global
-            if not last_assigned_setting:
-                last_assigned_setting = Setting(key=queue_key, value=str(selected_user.id))
-                db_sql.session.add(last_assigned_setting)
-            else:
-                last_assigned_setting.value = str(selected_user.id)
-                
+            # Filtra os usuários que têm o menor número de atendimentos ativos
+            candidates = [u for u in users_query if active_counts.get(u.id, 0) == min_count]
+            
+            # Escolhe um aleatório entre os empatados
+            selected_user = random.choice(candidates)
+            
+            print(f"[BOT/TAGS] {len(candidates)} candidatos com {min_count} atendimentos ativos. Selecionado: {selected_user.name}")
+            
             if selected_user:
                 contact.assigned_to = selected_user.id
                 contact.assigned_name = selected_user.name
