@@ -1,4 +1,4 @@
-// js/dashboard.js 
+﻿// js/dashboard.js 
 
 // ─── State ───────────────────────────────────────────────────────────────────
 const API_URL = window.location.origin;
@@ -2355,6 +2355,30 @@ async function releaseChat(motivo = null, detalhes = null) {
     });
     const data = await res.json();
     if (res.ok) {
+      const userData = JSON.parse(localStorage.getItem('wp_crm_user') || '{}');
+
+      // Atualiza tags locais do contato na lista CONTACTS
+      const localContact = CONTACTS.find(c => c.id === currentChat.id);
+      if (localContact && data.tags) localContact.tags = data.tags;
+
+      // Para atendente (role=user): verificar se ainda tem acesso apos a limpeza das tags
+      if (userData.role === 'user' && userData.email) {
+        const myEmail = userData.email.toLowerCase();
+        const newTags = (data.tags || []).map(t => String(t).toLowerCase());
+        const stillHasAccess = newTags.includes(myEmail) || (data.assigned_to === userData.id);
+
+        if (!stillHasAccess) {
+          const closedId = currentChat.id;
+          CONTACTS = CONTACTS.filter(c => c.id !== closedId);
+          currentChat = null;
+          document.getElementById('chatEmpty').style.display = 'flex';
+          document.getElementById('chatInterface').style.display = 'none';
+          renderChatList(getFilteredContacts());
+          showToast('Atendimento finalizado!');
+          return;
+        }
+      }
+
       currentChat.assigned_to = null;
       currentChat.assigned_name = null;
       if (data.tags) currentChat.tags = data.tags;
@@ -2378,7 +2402,27 @@ function handleChatAssignment(data) {
     contact.assigned_to = data.assigned_to;
     contact.assigned_name = data.assigned_name;
     if (data.tags) contact.tags = data.tags;
-    
+
+    // Ao receber release via socket: verificar se o atendente atual perdeu acesso
+    if (data.action === 'release') {
+      const userData = JSON.parse(localStorage.getItem('wp_crm_user') || '{}');
+      if (userData.role === 'user' && userData.email) {
+        const myEmail = userData.email.toLowerCase();
+        const newTags = (data.tags || []).map(t => String(t).toLowerCase());
+        const stillHasAccess = newTags.includes(myEmail) || (data.assigned_to === userData.id);
+        if (!stillHasAccess) {
+          CONTACTS = CONTACTS.filter(c => c.id !== data.contact_id);
+          if (currentChat && currentChat.id === data.contact_id) {
+            currentChat = null;
+            document.getElementById('chatEmpty').style.display = 'flex';
+            document.getElementById('chatInterface').style.display = 'none';
+          }
+          renderChatList(getFilteredContacts());
+          return;
+        }
+      }
+    }
+
     // If this is the currently open chat, update the UI
     if (currentChat && currentChat.id === data.contact_id) {
       currentChat.assigned_to = data.assigned_to;

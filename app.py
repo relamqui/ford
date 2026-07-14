@@ -4017,13 +4017,22 @@ def release_chat(id):
             _s = Setor.query.get(user.setor_id)
             _setor_r = _s.name if _s else None
             
-    # Ao finalizar: remove tag do atendente, mantém Filial:Setor, adiciona BOT
+    # Ao finalizar: remove tag do atendente, email cru e mantém Filial:Setor, adiciona BOT
     current_tags = list(contact.tags or [])
     
-    # Remove tags de atendente (ex: "Atendente: Fulano") — case-insensitive com strip
+    # Coletar emails de todos os usuários para remoção (email cru nas tags)
+    try:
+        all_user_emails = {u.email.strip().lower() for u in User.query.filter(User.email != None).all() if u.email}
+    except Exception:
+        all_user_emails = set()
+    
+    # Remove tags de atendente ("Atendente: ...") E emails crus de usuários
     preserved_tags = [
         t for t in current_tags
-        if not (isinstance(t, str) and t.strip().lower().startswith('atendente:'))
+        if not (isinstance(t, str) and (
+            t.strip().lower().startswith('atendente:') or
+            t.strip().lower() in all_user_emails
+        ))
     ]
     
     # Remove BOT caso já exista (para não duplicar) e adiciona no início
