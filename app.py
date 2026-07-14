@@ -1322,6 +1322,8 @@ def toggle_disponibilidade():
 @admin_required
 def list_users():
     users = User.query.filter(User.role != 'admin').all()
+    active_counts = dict(db_sql.session.query(Contact.assigned_to, db_sql.func.count(Contact.id)).filter(Contact.assigned_to.isnot(None)).group_by(Contact.assigned_to).all())
+
     users_list = []
     for u in users:
         users_list.append({
@@ -1334,7 +1336,8 @@ def list_users():
             'filial_id': u.filial_id,
             'setor_id': u.setor_id,
             'filial': u.filial,
-            'setor': u.setor
+            'setor': u.setor,
+            'active_count': active_counts.get(u.id, 0)
         })
     return jsonify(users_list)
 
@@ -1766,6 +1769,8 @@ def gestor_manage_users():
     else:
         visible_users = all_users
 
+    active_counts = dict(db_sql.session.query(Contact.assigned_to, db_sql.func.count(Contact.id)).filter(Contact.assigned_to.isnot(None)).group_by(Contact.assigned_to).all())
+
     users_list = []
     for u in visible_users:
         users_list.append({
@@ -1777,7 +1782,8 @@ def gestor_manage_users():
             'filial_id': u.filial_id,
             'setor_id': u.setor_id,
             'filial': u.filial,
-            'setor': u.setor
+            'setor': u.setor,
+            'active_count': active_counts.get(u.id, 0)
         })
     return jsonify(users_list)
 
