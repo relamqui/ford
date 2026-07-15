@@ -1928,7 +1928,7 @@ def send_message():
         payload = {
             "chatId": f"{number}@c.us",
             "id": None,
-            "reply_to": None,
+            "reply_to": data.get('reply_to'),
             "text": text,
             "linkPreview": True,
             "linkPreviewHighQuality": False,
@@ -2041,6 +2041,44 @@ def send_message():
         return jsonify(res_data)
     except Exception as e:
         print(f"Erro ao enviar: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/whatsapp/delete-message', methods=['POST'])
+@auth_required
+def delete_message():
+    data = request.json
+    inst = data.get('instance')
+    number = "".join(filter(str.isdigit, str(data.get('number', ''))))
+    number = normalize_br_phone(number)
+    msg_id = data.get('message_id')
+    
+    if not inst or not number or not msg_id:
+        return jsonify({'error': 'Instância, número e message_id são obrigatórios'}), 400
+
+    try:
+        url = f"{WAHA_API_URL}/api/messages/delete"
+        # Algumas versões da API usam messageId, outras usam id
+        payload = {
+            "session": inst,
+            "chatId": f"{number}@c.us",
+            "messageId": msg_id,
+            "id": msg_id
+        }
+        print(f"[DELETE] URL: {url}")
+        print(f"[DELETE] Payload: {json.dumps(payload)}")
+        res = requests.post(url, json=payload, headers=get_waha_headers(), timeout=30)
+        print(f"[DELETE] Response status: {res.status_code}")
+        
+        # Mesmo se falhar no WAHA (ex: tempo expirado para apagar), podemos apagar localmente
+        # ou apenas retornar erro. Vamos tentar deletar do banco local.
+        msg = Message.query.get(msg_id)
+        if msg:
+            db_sql.session.delete(msg)
+            db_sql.session.commit()
+            
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        print(f"Erro ao deletar: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/whatsapp/send-audio', methods=['POST'])
@@ -3250,6 +3288,17 @@ def webhook():
                        m.get('buttonsResponseMessage', {}).get('selectedDisplayText') or \
                        m.get('listResponseMessage', {}).get('title') or \
                        "[Mensagem N8N/Mídia]"
+
+            # Check for replies (quoted messages)
+            context_info = m.get('extendedTextMessage', {}).get('contextInfo', {})
+            reply_stanza_id = context_info.get('stanzaId')
+            if reply_stanza_id:
+                quoted_msg = context_info.get('quotedMessage', {})
+                quoted_text = quoted_msg.get('conversation') or \
+                              quoted_msg.get('extendedTextMessage', {}).get('text') or \
+                              "Mensagem Mídia/Documento"
+                quoted_text = quoted_text.replace('\n', ' ')[:50] # Short preview
+                text = f"[REPLY:{reply_stanza_id}|{quoted_text}]\n{text}"
 
             now = get_now()
             time_str = now.strftime("%d/%m %H:%M")

@@ -1103,6 +1103,23 @@ function renderMessages(messages) {
     const botLabel = isBot ? `<div class="bot-label">🤖 Respondido pelo Bot</div>` : '';
 
     let messageContent = msg.text ? String(msg.text) : "";
+    
+    // Parse [REPLY:id|text]
+    let replyBlock = '';
+    const replyMatch = messageContent.match(/^\[REPLY:([^|]+)\|([^\]]+)\]\n/);
+    if (replyMatch) {
+        const replyId = replyMatch[1];
+        const replyText = replyMatch[2];
+        replyBlock = `<div class="msg-reply-block">
+            <div class="msg-reply-text">${escapeHtml(replyText)}</div>
+        </div>`;
+        messageContent = messageContent.replace(replyMatch[0], '');
+    } else if (messageContent === '[MENSAGEM_APAGADA]') {
+        messageContent = '<div class="msg-deleted"><svg viewBox="0 0 16 16" width="14" height="14" style="margin-right:4px;"><path fill="currentColor" d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM0 8a8 8 0 1116 0A8 8 0 010 8z"></path><path fill="currentColor" d="M10.854 5.146a.5.5 0 00-.708 0L8 7.293 5.854 5.146a.5.5 0 10-.708.708L7.293 8l-2.147 2.146a.5.5 0 00.708.708L8 8.707l2.146 2.147a.5.5 0 00.708-.708L8.707 8l2.147-2.146a.5.5 0 000-.708z"></path></svg> <em>Esta mensagem foi apagada</em></div>';
+        replyBlock = '';
+        ticks = ''; // Don't show ticks for deleted
+    }
+
     const authToken = localStorage.getItem('wp_crm_token');
     
     if (messageContent.startsWith('[LOCATION_REF] ')) {
@@ -1230,7 +1247,11 @@ function renderMessages(messages) {
 
     el.innerHTML = `
       <div class="msg-bubble">
+        <div class="msg-actions" onclick="toggleMsgMenu(event, '${msg.id}')">
+          <svg viewBox="0 0 19 20" width="19" height="20"><path fill="currentColor" d="M3.8 6.7l5.7 5.7 5.7-5.7 1.6 1.6-7.3 7.2-7.3-7.2 1.6-1.6z"></path></svg>
+        </div>
         ${botLabel}
+        ${replyBlock}
         ${messageContent}
         <div class="msg-meta">
           <span class="msg-time">${msg.time}</span>
@@ -1355,6 +1376,9 @@ function initWaPlayer(playerEl) {
   });
 }
 
+window.replyingToMsgId = null;
+window.replyingToMsgText = null;
+
 async function sendMessage() {
   const textarea = document.getElementById('messageInput');
   const text = textarea.value.trim();
@@ -1378,7 +1402,11 @@ async function sendMessage() {
 
   // 1. Atualiza Localmente (Optimistic Update) — exibe texto original sem prefixo
   const tempId = 'temp_' + Date.now();
-  const newMsg = { id: tempId, text: textToSend, type: 'out', time };
+  let optimisticText = textToSend;
+  if (window.replyingToMsgId) {
+      optimisticText = `[REPLY:${window.replyingToMsgId}|${window.replyingToMsgText}]\n${textToSend}`;
+  }
+  const newMsg = { id: tempId, text: optimisticText, type: 'out', time };
   if (!currentChat.messages) currentChat.messages = [];
   currentChat.messages.push(newMsg);
   currentChat.lastMsg = text;
@@ -1419,7 +1447,8 @@ async function sendMessage() {
       body: JSON.stringify({
         instance: targetInstance,
         number: cleanNumber,
-        text: textToSend  // Envia com o prefixo *Nome:*
+        text: textToSend,  // Envia com o prefixo *Nome:*
+        reply_to: window.replyingToMsgId || null
       })
     });
 
@@ -1444,6 +1473,9 @@ async function sendMessage() {
     }
     
     console.log('Mensagem enviada via WAHA:', targetInstance);
+    
+    // Clear reply state after sending
+    cancelReply();
   } catch (err) {
     console.error('Erro ao enviar mensagem:', err);
     showToast(`Erro ao enviar: ${err.message}`);
