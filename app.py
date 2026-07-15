@@ -2058,10 +2058,16 @@ def delete_message():
     try:
         chat_id = f"{number}@c.us"
         
+        # O WAHA exige que o messageId tenha o prefixo true/false e o chatId
+        # Se for só o hash (ex: 3EB0...), montamos o ID completo. (Mensagens nossas sempre começam com true_)
+        waha_msg_id = msg_id
+        if not waha_msg_id.startswith('true_') and not waha_msg_id.startswith('false_'):
+            waha_msg_id = f"true_{chat_id}_{waha_msg_id}"
+            
         # O WAHA exige que o chatId e o messageId sejam passados com URL encoding (%40)
         from urllib.parse import quote
         safe_chat_id = quote(chat_id, safe='')
-        safe_msg_id = quote(msg_id, safe='')
+        safe_msg_id = quote(waha_msg_id, safe='')
         
         # Tentativa 1: DELETE /api/{session}/messages/{chatId}/{messageId} (padrão mais recente)
         url_1 = f"{WAHA_API_URL}/api/{inst}/messages/{safe_chat_id}/{safe_msg_id}"
