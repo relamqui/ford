@@ -2058,14 +2058,19 @@ def delete_message():
     try:
         chat_id = f"{number}@c.us"
         
+        # O WAHA exige que o chatId e o messageId sejam passados com URL encoding (%40)
+        from urllib.parse import quote
+        safe_chat_id = quote(chat_id, safe='')
+        safe_msg_id = quote(msg_id, safe='')
+        
         # Tentativa 1: DELETE /api/{session}/messages/{chatId}/{messageId} (padrão mais recente)
-        url_1 = f"{WAHA_API_URL}/api/{inst}/messages/{chat_id}/{msg_id}"
+        url_1 = f"{WAHA_API_URL}/api/{inst}/messages/{safe_chat_id}/{safe_msg_id}"
         print(f"[DELETE] Tentando URL 1: DELETE {url_1}")
         res = requests.delete(url_1, headers=get_waha_headers(), timeout=30)
         
         if res.status_code not in [200, 201]:
             # Tentativa 2: DELETE /api/{session}/chats/{chatId}/messages/{messageId}
-            url_2 = f"{WAHA_API_URL}/api/{inst}/chats/{chat_id}/messages/{msg_id}"
+            url_2 = f"{WAHA_API_URL}/api/{inst}/chats/{safe_chat_id}/messages/{safe_msg_id}"
             print(f"[DELETE] Tentando URL 2: DELETE {url_2}")
             res = requests.delete(url_2, headers=get_waha_headers(), timeout=30)
             
@@ -2082,6 +2087,8 @@ def delete_message():
             res = requests.post(url_3, json=payload, headers=get_waha_headers(), timeout=30)
 
         print(f"[DELETE] Response status final: {res.status_code}")
+        with open("delete_debug.txt", "a", encoding="utf-8") as f:
+            f.write(f"DELETE REQUEST FOR {msg_id}:\nURL_1: {url_1}\nFinal Status: {res.status_code}\nResponse Body: {res.text}\n---\n")
         
         # Deletar do banco local
         msg = Message.query.get(msg_id)
