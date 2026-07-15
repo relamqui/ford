@@ -1553,6 +1553,7 @@ async function deleteMessage(msgId) {
     
     // Atualização otimista
     const msg = currentChat.messages.find(m => m.id === msgId);
+    const originalText = msg ? msg.text : '';
     if (msg) {
         msg.text = '[MENSAGEM_APAGADA]';
         renderMessages(currentChat.messages);
@@ -1572,12 +1573,20 @@ async function deleteMessage(msgId) {
                 message_id: msgId
             })
         });
+        
+        const data = await response.json();
         if (!response.ok) {
-            throw new Error('Falha ao apagar');
+            throw new Error(data.error || 'Falha ao apagar');
         }
     } catch (err) {
         console.error('Erro ao deletar mensagem:', err);
-        showToast('Erro ao apagar mensagem');
+        showToast(`Erro ao apagar: ${err.message}`);
+        
+        // Reverter atualização otimista
+        if (msg) {
+            msg.text = originalText;
+            renderMessages(currentChat.messages);
+        }
     }
 }
 

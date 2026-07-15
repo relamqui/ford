@@ -2090,6 +2090,9 @@ def delete_message():
         with open("delete_debug.txt", "a", encoding="utf-8") as f:
             f.write(f"DELETE REQUEST FOR {msg_id}:\nURL_1: {url_1}\nFinal Status: {res.status_code}\nResponse Body: {res.text}\n---\n")
         
+        if res.status_code not in [200, 201]:
+            return jsonify({'error': f'Falha ao apagar no WAHA: {res.status_code} - {res.text}'}), 500
+
         # Deletar do banco local
         msg = Message.query.get(msg_id)
         if msg:
