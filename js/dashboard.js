@@ -1103,6 +1103,7 @@ function renderMessages(messages) {
     const botLabel = isBot ? `<div class="bot-label">🤖 Respondido pelo Bot</div>` : '';
 
     let messageContent = msg.text ? String(msg.text) : "";
+    let isDeletedMsg = false;
     
     // Parse [REPLY:id|text]
     let replyBlock = '';
@@ -1118,6 +1119,7 @@ function renderMessages(messages) {
         messageContent = '<div class="msg-deleted"><svg viewBox="0 0 16 16" width="14" height="14" style="margin-right:4px;"><path fill="currentColor" d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM0 8a8 8 0 1116 0A8 8 0 010 8z"></path><path fill="currentColor" d="M10.854 5.146a.5.5 0 00-.708 0L8 7.293 5.854 5.146a.5.5 0 10-.708.708L7.293 8l-2.147 2.146a.5.5 0 00.708.708L8 8.707l2.146 2.147a.5.5 0 00.708-.708L8.707 8l2.147-2.146a.5.5 0 000-.708z"></path></svg> <em>Esta mensagem foi apagada</em></div>';
         replyBlock = '';
         ticks = ''; // Don't show ticks for deleted
+        isDeletedMsg = true;
     }
 
     const authToken = localStorage.getItem('wp_crm_token');
@@ -1241,7 +1243,7 @@ function renderMessages(messages) {
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path><line x1="12" y1="9" x2="12" y2="15"></line><line x1="9" y1="12" x2="15" y2="12"></line></svg>
                 </button>` : ''}
             </div>`;
-    } else {
+    } else if (!isDeletedMsg) {
         messageContent = escapeHtml(messageContent).replace(/\n/g, '<br>').replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>');
     }
 

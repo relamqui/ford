@@ -2056,21 +2056,34 @@ def delete_message():
         return jsonify({'error': 'Instância, número e message_id são obrigatórios'}), 400
 
     try:
-        url = f"{WAHA_API_URL}/api/messages/delete"
-        # Algumas versões da API usam messageId, outras usam id
-        payload = {
-            "session": inst,
-            "chatId": f"{number}@c.us",
-            "messageId": msg_id,
-            "id": msg_id
-        }
-        print(f"[DELETE] URL: {url}")
-        print(f"[DELETE] Payload: {json.dumps(payload)}")
-        res = requests.post(url, json=payload, headers=get_waha_headers(), timeout=30)
-        print(f"[DELETE] Response status: {res.status_code}")
+        chat_id = f"{number}@c.us"
         
-        # Mesmo se falhar no WAHA (ex: tempo expirado para apagar), podemos apagar localmente
-        # ou apenas retornar erro. Vamos tentar deletar do banco local.
+        # Tentativa 1: DELETE /api/{session}/messages/{chatId}/{messageId} (padrão mais recente)
+        url_1 = f"{WAHA_API_URL}/api/{inst}/messages/{chat_id}/{msg_id}"
+        print(f"[DELETE] Tentando URL 1: DELETE {url_1}")
+        res = requests.delete(url_1, headers=get_waha_headers(), timeout=30)
+        
+        if res.status_code not in [200, 201]:
+            # Tentativa 2: DELETE /api/{session}/chats/{chatId}/messages/{messageId}
+            url_2 = f"{WAHA_API_URL}/api/{inst}/chats/{chat_id}/messages/{msg_id}"
+            print(f"[DELETE] Tentando URL 2: DELETE {url_2}")
+            res = requests.delete(url_2, headers=get_waha_headers(), timeout=30)
+            
+        if res.status_code not in [200, 201]:
+            # Tentativa 3: POST /api/messages/delete (WAHA Core/Plus mais antigo)
+            url_3 = f"{WAHA_API_URL}/api/messages/delete"
+            payload = {
+                "session": inst,
+                "chatId": chat_id,
+                "messageId": msg_id,
+                "id": msg_id
+            }
+            print(f"[DELETE] Tentando URL 3: POST {url_3}")
+            res = requests.post(url_3, json=payload, headers=get_waha_headers(), timeout=30)
+
+        print(f"[DELETE] Response status final: {res.status_code}")
+        
+        # Deletar do banco local
         msg = Message.query.get(msg_id)
         if msg:
             db_sql.session.delete(msg)
