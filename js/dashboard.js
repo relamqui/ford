@@ -1501,8 +1501,8 @@ function toggleMsgMenu(event, msgId) {
     
     // Posicionar o menu
     const rect = event.currentTarget.getBoundingClientRect();
-    menu.style.top = \`\${rect.bottom + window.scrollY}px\`;
-    menu.style.left = \`\${rect.left + window.scrollX - 120}px\`; // -120 to align better to the left of the button
+    menu.style.top = `${rect.bottom + window.scrollY}px`;
+    menu.style.left = `${rect.left + window.scrollX - 120}px`; // -120 to align better to the left of the button
     
     // Fechar ao clicar fora
     setTimeout(() => {
@@ -1521,7 +1521,7 @@ function replyToMsg(msgId) {
     if (!msg) return;
     
     window.replyingToMsgId = msgId;
-    window.replyingToMsgText = (msg.text || '').replace(/\\n/g, ' ').substring(0, 50);
+    window.replyingToMsgText = (msg.text || '').replace(/\n/g, ' ').substring(0, 50);
     
     const replyBar = document.getElementById('reply-preview-bar');
     const replyText = document.getElementById('reply-preview-text');
@@ -1557,12 +1557,12 @@ async function deleteMessage(msgId) {
     }
     
     try {
-        const cleanNumber = currentChat.phone.replace(/\\D/g, '');
-        const response = await fetch(\`\${API_URL}/api/whatsapp/delete-message\`, {
+        const cleanNumber = currentChat.phone.replace(/\D/g, '');
+        const response = await fetch(`${API_URL}/api/whatsapp/delete-message`, {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
-                'Authorization': \`Bearer \${localStorage.getItem('wp_crm_token')}\`
+                'Authorization': `Bearer ${localStorage.getItem('wp_crm_token')}`
             },
             body: JSON.stringify({
                 instance: currentChat.instance,
