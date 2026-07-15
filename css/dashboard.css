@@ -1462,6 +1462,201 @@ body {
 .reply-preview-label {
   font-size: 11px;
   color: var(--green);
+  border: none;
+  border-radius: 8px;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-atender {
+  background: var(--green);
+  color: white;
+  box-shadow: 0 2px 8px rgba(0,168,132,0.3);
+}
+.btn-atender:hover {
+  background: var(--green-light);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,168,132,0.4);
+}
+
+.btn-finalizar {
+  background: rgba(243,39,53,0.12);
+  color: #f32735;
+  border: 1px solid rgba(243,39,53,0.3);
+}
+.btn-finalizar:hover {
+  background: rgba(243,39,53,0.2);
+  transform: translateY(-1px);
+}
+
+.btn-destravar {
+  background: rgba(255,152,0,0.12);
+  color: #ff9800;
+  border: 1px solid rgba(255,152,0,0.3);
+}
+.btn-destravar:hover {
+  background: rgba(255,152,0,0.2);
+  transform: translateY(-1px);
+}
+
+/* ======== INPUT LOCKED BAR ======== */
+.input-locked-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--bg-sidebar-left);
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.input-locked-bar svg {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+  
+/* Quick Replies */  
+.quick-replies-bar { display: flex; gap: 8px; padding: 10px 16px; overflow-x: auto; background: var(--panel-bg); border-top: 1px solid var(--border); }  
+.quick-reply-chip { padding: 6px 12px; background: rgba(0, 168, 132, 0.1); border: 1px solid rgba(0, 168, 132, 0.3); border-radius: 16px; color: var(--primary); font-size: 13px; cursor: pointer; white-space: nowrap; transition: all 0.2s; display: flex; align-items: center; gap: 6px; }  
+.quick-reply-chip:hover { background: rgba(0, 168, 132, 0.2); }  
+.quick-reply-chip .del-btn { color: #f87171; background: transparent; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; margin-left: 4px; font-size: 14px; opacity: 0.7; }  
+.quick-reply-chip .del-btn:hover { opacity: 1; }  
+.quick-reply-chip.add-btn { background: transparent; border: 1px dashed var(--text-muted); color: var(--text-muted); }  
+.quick-reply-chip.add-btn:hover { background: rgba(255,255,255,0.05); color: #fff; border-color: #fff; } 
+
+/* ======== PANEL ENTREGAS ======== */
+.panel-entregas {
+  grid-column: 2 / -1;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  height: 100%;
+}
+
+.btn-nova-entrega {
+  padding: 8px 16px;
+  background: var(--green);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-nova-entrega:hover {
+  background: var(--green-light);
+  transform: translateY(-1px);
+}
+
+.tabela-entregas-container {
+  padding: 24px;
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* WPCRM Table Style */
+.wpcrm-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  text-align: left;
+  color: var(--text-primary);
+  font-size: 13.5px;
+}
+
+.wpcrm-table thead th {
+  padding: 14px 16px;
+  background: rgba(0, 0, 0, 0.15);
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid var(--border);
+}
+
+.wpcrm-table tbody tr {
+  transition: background 0.15s;
+}
+
+.wpcrm-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.wpcrm-table tbody td {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+/* Dynamic status select inside table */
+.wpcrm-table select {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 6px 10px;
+  border-radius: 6px;
+  outline: none;
+  font-family: 'Inter', sans-serif;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.wpcrm-table select:focus {
+  border-color: var(--green);
+}
+
+.wpcrm-table button {
+  background: rgba(243, 39, 53, 0.1);
+  color: #f32735;
+  border: 1px solid rgba(243, 39, 53, 0.2);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.wpcrm-table button:hover {
+  background: rgba(243, 39, 53, 0.2);
+}
+
+/* ======== REPLY PREVIEW BAR ======== */
+.reply-preview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(0,0,0,0.2);
+  border-left: 4px solid var(--green);
+  margin: 0 16px 8px 16px;
+  border-radius: 0 8px 8px 0;
+  color: var(--text-primary);
+}
+.reply-preview-content {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.reply-preview-label {
+  font-size: 11px;
+  color: var(--green);
   font-weight: bold;
 }
 .reply-preview-text {
@@ -1482,6 +1677,7 @@ body {
   font-size: 13px;
   color: var(--text-secondary);
 }
+
 .msg-reply-text {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1492,7 +1688,8 @@ body {
 
 /* ======== MESSAGE ACTIONS & CONTEXT MENU ======== */
 .msg-bubble {
-  position: relative; /* Para poder posicionar .msg-actions */
+  position: relative;
+  padding-right: 32px;
 }
 .msg-actions {
   position: absolute;
@@ -1511,7 +1708,7 @@ body {
   transition: opacity 0.2s;
   z-index: 10;
 }
-.message:hover .msg-actions {
+.msg-bubble:hover .msg-actions {
   opacity: 1;
 }
 .msg-actions:hover {

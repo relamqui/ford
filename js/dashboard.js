@@ -1482,6 +1482,103 @@ async function sendMessage() {
   }
 }
 
+function toggleMsgMenu(event, msgId) {
+    event.stopPropagation();
+    
+    // Remover menu antigo se existir
+    const oldMenu = document.getElementById('msg-context-menu');
+    if (oldMenu) oldMenu.remove();
+    
+    const menu = document.createElement('div');
+    menu.id = 'msg-context-menu';
+    menu.className = 'msg-context-menu';
+    menu.innerHTML = `
+        <div class="msg-menu-item" onclick="replyToMsg('${msgId}')">Responder</div>
+        <div class="msg-menu-item delete" onclick="deleteMessage('${msgId}')">Apagar</div>
+    `;
+    
+    document.body.appendChild(menu);
+    
+    // Posicionar o menu
+    const rect = event.currentTarget.getBoundingClientRect();
+    menu.style.top = \`\${rect.bottom + window.scrollY}px\`;
+    menu.style.left = \`\${rect.left + window.scrollX - 120}px\`; // -120 to align better to the left of the button
+    
+    // Fechar ao clicar fora
+    setTimeout(() => {
+        const closeMenu = (e) => {
+            if (!menu.contains(e.target)) {
+                menu.remove();
+                document.removeEventListener('click', closeMenu);
+            }
+        };
+        document.addEventListener('click', closeMenu);
+    }, 0);
+}
+
+function replyToMsg(msgId) {
+    const msg = currentChat.messages.find(m => m.id === msgId);
+    if (!msg) return;
+    
+    window.replyingToMsgId = msgId;
+    window.replyingToMsgText = (msg.text || '').replace(/\\n/g, ' ').substring(0, 50);
+    
+    const replyBar = document.getElementById('reply-preview-bar');
+    const replyText = document.getElementById('reply-preview-text');
+    if (replyBar && replyText) {
+        replyText.textContent = window.replyingToMsgText;
+        replyBar.style.display = 'flex';
+    }
+    
+    document.getElementById('messageInput').focus();
+    
+    const oldMenu = document.getElementById('msg-context-menu');
+    if (oldMenu) oldMenu.remove();
+}
+
+function cancelReply() {
+    window.replyingToMsgId = null;
+    window.replyingToMsgText = null;
+    const replyBar = document.getElementById('reply-preview-bar');
+    if (replyBar) replyBar.style.display = 'none';
+}
+
+async function deleteMessage(msgId) {
+    const oldMenu = document.getElementById('msg-context-menu');
+    if (oldMenu) oldMenu.remove();
+
+    if (!confirm('Tem certeza que deseja apagar esta mensagem para todos?')) return;
+    
+    // Atualização otimista
+    const msg = currentChat.messages.find(m => m.id === msgId);
+    if (msg) {
+        msg.text = '[MENSAGEM_APAGADA]';
+        renderMessages(currentChat.messages);
+    }
+    
+    try {
+        const cleanNumber = currentChat.phone.replace(/\\D/g, '');
+        const response = await fetch(\`\${API_URL}/api/whatsapp/delete-message\`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': \`Bearer \${localStorage.getItem('wp_crm_token')}\`
+            },
+            body: JSON.stringify({
+                instance: currentChat.instance,
+                number: cleanNumber,
+                message_id: msgId
+            })
+        });
+        if (!response.ok) {
+            throw new Error('Falha ao apagar');
+        }
+    } catch (err) {
+        console.error('Erro ao deletar mensagem:', err);
+        showToast('Erro ao apagar mensagem');
+    }
+}
+
 function handleEnter(e) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
