@@ -956,7 +956,8 @@ function renderChatList(contacts) {
              !t.toLowerCase().startsWith('atendente:') && 
              t !== 'BOT' && 
              !(typeof t === 'string' && t.includes(':') && !t.toLowerCase().startsWith('atendente:')) &&
-             t !== 'Novo Lead' && t !== 'Leads'
+             t !== 'Novo Lead' && t !== 'Leads' &&
+             !(typeof t === 'string' && t.includes('@')) // Oculta tags de email usadas para permissão
         );
         
         otherTags.forEach(other => {
@@ -965,12 +966,15 @@ function renderChatList(contacts) {
     }
     
     let tagsHtml = visibleTags.map(t => `<span class="chat-list-tag ${t.cls}">${escapeHtml(t.label)}</span>`).join('');
+    
+    const displayName = c.name || c.phone;
+    const displayAvatar = c.avatar || displayName.charAt(0).toUpperCase();
 
     item.innerHTML = `
-      <div class="chat-item-avatar" style="background:${avatarColor(c.name)}">${c.avatar}</div>
+      <div class="chat-item-avatar" style="background:${avatarColor(displayName)}">${displayAvatar}</div>
       <div class="chat-item-body">
         <div class="chat-item-top">
-          <span class="chat-item-name">${c.name}</span>
+          <span class="chat-item-name">${escapeHtml(displayName)}</span>
           <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
              ${tagsHtml}
              <span class="chat-item-time ${timeClass}">${c.time}</span>
