@@ -942,12 +942,6 @@ function renderChatList(contacts) {
         const botTag = c.tags.find(t => t === 'BOT');
         const filialTag = c.tags.find(t => typeof t === 'string' && t.includes(':') && !t.toLowerCase().startsWith('atendente:'));
         
-        if (atendenteTag) {
-            visibleTags.push({ label: atendenteTag.replace('Atendente:', '').trim(), cls: 'tag-orange' });
-        } else if (botTag) {
-            visibleTags.push({ label: 'BOT', cls: 'tag-purple' });
-        }
-        
         if (filialTag) {
             visibleTags.push({ label: filialTag, cls: typeof tagColor === 'function' ? tagColor(filialTag) : 'tag-blue' });
         }
