@@ -2696,6 +2696,28 @@ async function showNewChat() {
   modal.style.display = 'flex';
   document.getElementById('newChatNumber').value = '';
   document.getElementById('newChatReason').value = 'Olá!';
+  
+  const select = document.getElementById('newChatContactSelect');
+  if (select) {
+    select.innerHTML = '<option value="">-- Selecione ou digite o número abaixo --</option>';
+    
+    // Filtra apenas contatos que têm nome definido (e diferente do número)
+    const namedContacts = CONTACTS
+      .filter(c => c.name && c.name !== c.phone)
+      .sort((a, b) => a.name.localeCompare(b.name));
+      
+    // Remove duplicatas de número (pode haver o mesmo contato em instâncias diferentes)
+    const seenPhones = new Set();
+    namedContacts.forEach(c => {
+      if (!seenPhones.has(c.phone)) {
+        seenPhones.add(c.phone);
+        const opt = document.createElement('option');
+        opt.value = c.phone;
+        opt.textContent = `${c.name} (${c.phone})`;
+        select.appendChild(opt);
+      }
+    });
+  }
 }
 
 function closeNewChatModal() {
