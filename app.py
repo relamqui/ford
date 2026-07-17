@@ -3478,6 +3478,29 @@ def webhook():
         print(f"Erro webhook: {e}")
         return 'ERR', 500
 
+@app.route('/api/agenda', methods=['GET'])
+@auth_required
+def get_agenda():
+    # Retorna todos os contatos salvos (com nome) independente de estarem em atendimento
+    contacts = Contact.query.filter(Contact.name != None, Contact.name != '').all()
+    
+    seen_phones = set()
+    agenda_list = []
+    
+    for c in contacts:
+        # Se o nome for diferente do telefone, consideramos um contato válido para a agenda
+        if c.name != c.phone and c.phone not in seen_phones:
+            seen_phones.add(c.phone)
+            agenda_list.append({
+                'name': c.name,
+                'phone': c.phone
+            })
+            
+    # Ordenar alfabeticamente
+    agenda_list.sort(key=lambda x: (x['name'] or '').lower())
+    
+    return jsonify(agenda_list)
+
 @app.route('/api/contacts', methods=['GET'])
 @auth_required
 def get_contacts():

@@ -2699,24 +2699,30 @@ async function showNewChat() {
   
   const select = document.getElementById('newChatContactSelect');
   if (select) {
-    select.innerHTML = '<option value="">-- Selecione ou digite o número abaixo --</option>';
+    select.innerHTML = '<option value="">Carregando agenda...</option>';
     
-    // Filtra apenas contatos que têm nome definido (e diferente do número)
-    const namedContacts = CONTACTS
-      .filter(c => c.name && c.name !== c.phone)
-      .sort((a, b) => a.name.localeCompare(b.name));
+    try {
+      const response = await fetch(`${API_URL}/api/agenda`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('wp_crm_token')}` }
+      });
       
-    // Remove duplicatas de número (pode haver o mesmo contato em instâncias diferentes)
-    const seenPhones = new Set();
-    namedContacts.forEach(c => {
-      if (!seenPhones.has(c.phone)) {
-        seenPhones.add(c.phone);
-        const opt = document.createElement('option');
-        opt.value = c.phone;
-        opt.textContent = `${c.name} (${c.phone})`;
-        select.appendChild(opt);
+      if (response.ok) {
+        const agendaContacts = await response.json();
+        select.innerHTML = '<option value="">-- Selecione ou digite o número abaixo --</option>';
+        
+        agendaContacts.forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c.phone;
+          opt.textContent = `${c.name} (${c.phone})`;
+          select.appendChild(opt);
+        });
+      } else {
+        select.innerHTML = '<option value="">Erro ao carregar agenda</option>';
       }
-    });
+    } catch (err) {
+      console.error('Erro ao buscar agenda:', err);
+      select.innerHTML = '<option value="">Erro ao carregar agenda</option>';
+    }
   }
 }
 
