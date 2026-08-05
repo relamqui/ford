@@ -1384,9 +1384,15 @@ def login():
         # Resolve filial/setor names for the user response
         filial_name = user.filial
         setor_name = user.setor
+        user_instances = list(user.instances or [])
+        
         if not filial_name and user.filial_id:
             f_obj = Filial.query.get(user.filial_id)
-            if f_obj: filial_name = f_obj.name
+            if f_obj: 
+                filial_name = f_obj.name
+                if f_obj.instance and f_obj.instance not in user_instances:
+                    user_instances.append(f_obj.instance)
+                    
         if not setor_name and user.setor_id:
             s_obj = Setor.query.get(user.setor_id)
             if s_obj: setor_name = s_obj.name
@@ -1402,7 +1408,7 @@ def login():
                 'setor_id': user.setor_id,
                 'filial': filial_name,
                 'setor': setor_name,
-                'instances': user.instances or [],
+                'instances': user_instances,
                 'disponivel': user.disponivel if user.disponivel is not None else True
             }
         })

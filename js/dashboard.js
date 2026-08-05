@@ -538,12 +538,23 @@ function handleIncomingWebhook(data) {
     let type = fromMe ? 'out' : 'in';
 
     if (!contact) {
-      // Para usuários não-admin, só exibir contatos que já foram carregados
-      // do servidor (com filtro de filial/setor). Novos contatos via socket
-      // serão vistos após o próximo reload de contatos.
       const userData = JSON.parse(localStorage.getItem('wp_crm_user') || '{}');
       if (userData.role !== 'admin') {
-        console.log('[Socket] Contato novo ignorado (filtro de filial/setor):', phone, instName);
+        console.log('[Socket] Contato novo detectado (filtro de filial/setor). Tentando recarregar contatos:', phone, instName);
+        if (window.debouncedLoadContacts) {
+           window.debouncedLoadContacts();
+        } else {
+           window.debouncedLoadContacts = function() {
+               if (window._loadContactsTimeout) clearTimeout(window._loadContactsTimeout);
+               window._loadContactsTimeout = setTimeout(() => {
+                   loadContacts().then(() => {
+                       renderTagFilter();
+                       renderChatList(getFilteredContacts());
+                   });
+               }, 1000);
+           };
+           window.debouncedLoadContacts();
+        }
         return;
       }
       // instName já declarado acima (linha 308), reutilizar
