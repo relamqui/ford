@@ -31,6 +31,32 @@ load_dotenv()
 WAHA_API_URL = os.getenv('WAHA_API_URL', 'http://localhost:3000').rstrip('/')
 WAHA_API_KEY = os.getenv('WAHA_API_KEY', '')
 
+
+def waha_post_with_fallback(url, payload, headers, timeout=30):
+    import copy, requests
+    res = requests.post(url, json=payload, headers=headers, timeout=timeout)
+    if res.status_code not in (200, 201):
+        chat_id = payload.get("chatId", "")
+        if "@c.us" in chat_id:
+            number = chat_id.replace("@c.us", "")
+            if len(number) == 12 and number.startswith("55"):
+                fallback_number = number[:4] + "9" + number[4:]
+                print(f"[FALLBACK] Tentando com 9 digitos: {fallback_number}")
+                payload_fallback = copy.deepcopy(payload)
+                payload_fallback["chatId"] = f"{fallback_number}@c.us"
+                res2 = requests.post(url, json=payload_fallback, headers=headers, timeout=timeout)
+                if res2.status_code in (200, 201):
+                    return res2
+            elif len(number) == 13 and number.startswith("55"):
+                fallback_number = number[:4] + number[5:]
+                print(f"[FALLBACK] Tentando com 8 digitos: {fallback_number}")
+                payload_fallback = copy.deepcopy(payload)
+                payload_fallback["chatId"] = f"{fallback_number}@c.us"
+                res2 = requests.post(url, json=payload_fallback, headers=headers, timeout=timeout)
+                if res2.status_code in (200, 201):
+                    return res2
+    return res
+
 def get_waha_headers():
     headers = {'Content-Type': 'application/json', 'Accept': 'application/json'}
     if WAHA_API_KEY:
@@ -320,6 +346,59 @@ def normalize_br_phone(phone_str):
     if len(p) == 13 and p.startswith('55') and p[4] == '9':
         p = p[:4] + p[5:]
     return p
+
+def get_phone_alternative(phone):
+    """Retorna a variante do número BR com/sem o 9° dígito.
+    
+    Números BR celulares podem existir com 8 ou 9 dígitos locais:
+    - 12 dígitos (55 + DDD + 8): sem o 9 → adiciona o 9 → 13 dígitos
+    - 13 dígitos (55 + DDD + 9 + 8): com o 9 → remove o 9 → 12 dígitos
+    Retorna None se o número não for BR ou não se aplicar.
+    """
+    if not phone:
+        return None
+    p = "".join(filter(str.isdigit, str(phone).split('@')[0]))
+    # 12 dígitos: 55 + DDD(2) + número(8) → inserir 9 após DDD
+    if len(p) == 12 and p.startswith('55'):
+        return p[:4] + '9' + p[4:]
+    # 13 dígitos com 9: 55 + DDD(2) + 9 + número(8) → remover o 9
+    if len(p) == 13 and p.startswith('55') and p[4] == '9':
+        return p[:4] + p[5:]
+    return None
+
+def waha_send_with_retry(method, url, headers, timeout=30, **kwargs):
+    """Faz uma requisição ao WAHA e, se falhar por número não encontrado,
+    tenta automaticamente com o chatId alternativo (com/sem 9° dígito BR).
+    
+    Uso: waha_send_with_retry('post', url, headers, json=payload, timeout=30)
+    Retorna: (response, chat_id_usado)
+    """
+    import copy
+    res = getattr(requests, method)(url, headers=headers, timeout=timeout, **kwargs)
+    chat_id_used = None
+    
+    # Extrair chatId do payload para tentar alternativo
+    payload = kwargs.get('json') or kwargs.get('data') or {}
+    if isinstance(payload, dict):
+        chat_id_used = payload.get('chatId', '')
+    
+    # Se deu erro, tentar com número alternativo (9 dígito)
+    if res.status_code not in (200, 201) and chat_id_used:
+        phone_part = chat_id_used.split('@')[0] if '@' in chat_id_used else chat_id_used
+        alt_phone = get_phone_alternative(phone_part)
+        if alt_phone:
+            alt_chat_id = f"{alt_phone}@c.us"
+            alt_kwargs = copy.deepcopy(kwargs)
+            if 'json' in alt_kwargs and alt_kwargs['json']:
+                alt_kwargs['json'] = dict(alt_kwargs['json'])
+                alt_kwargs['json']['chatId'] = alt_chat_id
+            print(f"[WAHA_RETRY] Tentativa 1 falhou (HTTP {res.status_code}) com {chat_id_used}. Tentando alternativo: {alt_chat_id}")
+            alt_res = getattr(requests, method)(url, headers=headers, timeout=timeout, **alt_kwargs)
+            print(f"[WAHA_RETRY] Resultado alternativo: HTTP {alt_res.status_code}")
+            if alt_res.status_code in (200, 201):
+                return alt_res, alt_chat_id
+    
+    return res, chat_id_used
 
 def extract_waha_msg_id(res_data, fallback):
     m_id = res_data.get('id')
@@ -1923,7 +2002,7 @@ def send_message():
         now = get_now()
         time_str = now.strftime("%d/%m %H:%M")
         
-        # Chamada para a API externa (WAHA)
+        # Chamada para a API externa (WAHA) com retry automático para 9° dígito BR
         url = f"{WAHA_API_URL}/api/sendText"
         payload = {
             "chatId": f"{number}@c.us",
@@ -1936,7 +2015,7 @@ def send_message():
         }
         print(f"[SEND] URL: {url}")
         print(f"[SEND] Payload: {json.dumps(payload)}")
-        res = requests.post(url, json=payload, headers=get_waha_headers(), timeout=30)
+        res, chat_id_used = waha_send_with_retry('post', url, get_waha_headers(), timeout=30, json=payload)
         print(f"[SEND] Response status: {res.status_code}")
         print(f"[SEND] Response body: {res.text[:300]}")
         try:
@@ -1944,11 +2023,15 @@ def send_message():
         except Exception:
             res_data = {'message': res.text}
         
-        # Verificar se a API retornou erro
+        # Verificar se a API retornou erro (mesmo após retry)
         if res.status_code != 200 and res.status_code != 201:
             error_msg = res_data.get('response', {}).get('message', res_data.get('message', str(res_data)))
             print(f"[SEND] ERRO WAHA API: {error_msg}")
             return jsonify({'error': f'WAHA API erro: {error_msg}'}), res.status_code
+        
+        # Usar o número do chatId que funcionou (pode ser o alternativo com/sem 9)
+        if chat_id_used and '@' in chat_id_used:
+            number = chat_id_used.split('@')[0]
         
         msg_id = extract_waha_msg_id(res_data, f"out_{int(now.timestamp())}")
         contact_id = f"c_{number}_{inst}"
@@ -2145,7 +2228,9 @@ def send_audio():
             "convert": True
         }
         print(f"[Send Audio] Enviando audio para {number} via {inst}")
-        res = requests.post(url, json=payload, headers=get_waha_headers(), timeout=30)
+        res, chat_id_used = waha_send_with_retry('post', url, get_waha_headers(), timeout=30, json=payload)
+        if chat_id_used and '@' in chat_id_used:
+            number = chat_id_used.split('@')[0]
         try:
             res_data = res.json()
         except Exception:
@@ -2240,7 +2325,9 @@ def send_image():
                 "data": image_raw
             }
         }
-        res = requests.post(url, json=payload, headers=get_waha_headers(), timeout=30)
+        res, chat_id_used = waha_send_with_retry('post', url, get_waha_headers(), timeout=30, json=payload)
+        if chat_id_used and '@' in chat_id_used:
+            number = chat_id_used.split('@')[0]
         try:
             res_data = res.json()
         except Exception:
@@ -2331,7 +2418,9 @@ def send_video():
                 "data": video_raw
             }
         }
-        res = requests.post(url, json=payload, headers=get_waha_headers(), timeout=60)
+        res, chat_id_used = waha_send_with_retry('post', url, get_waha_headers(), timeout=60, json=payload)
+        if chat_id_used and '@' in chat_id_used:
+            number = chat_id_used.split('@')[0]
         try:
             res_data = res.json()
         except Exception:
@@ -2456,7 +2545,9 @@ def send_document():
             }
         }
         print(f"[Send Document] Enviando para WAHA via URL: {doc_url}")
-        res = requests.post(url, json=payload, headers=get_waha_headers(), timeout=60)
+        res, chat_id_used = waha_send_with_retry('post', url, get_waha_headers(), timeout=60, json=payload)
+        if chat_id_used and '@' in chat_id_used:
+            number = chat_id_used.split('@')[0]
         try:
             res_data = res.json()
         except Exception:
@@ -2536,8 +2627,9 @@ def send_location():
             "title": name,
             "description": address
         }
-        res = requests.post(url, json=payload, headers=get_waha_headers(), timeout=60)
-        res.raise_for_status()
+        res, chat_id_used = waha_send_with_retry('post', url, get_waha_headers(), timeout=60, json=payload)
+        if chat_id_used and '@' in chat_id_used:
+            number = chat_id_used.split('@')[0]
         try:
             res_data = res.json()
         except Exception:
@@ -2624,7 +2716,9 @@ def send_contact():
             ]
         }
         print(f"[Send Contact] Enviando contato '{contact_name}' ({contact_phone}) para {number} via {inst}")
-        res = requests.post(url, json=payload, headers=get_waha_headers(), timeout=30)
+        res, chat_id_used = waha_send_with_retry('post', url, get_waha_headers(), timeout=30, json=payload)
+        if chat_id_used and '@' in chat_id_used:
+            number = chat_id_used.split('@')[0]
         try:
             res_data = res.json()
         except Exception:
