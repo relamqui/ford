@@ -3620,10 +3620,10 @@ function confirmImageCrop() {
 }
 
 window.promptAdminPassword = async function() {
-  const pwd = prompt('Digite a senha do administrador:');
+  const pwd = prompt("Digite a senha do administrador:");
   if (!pwd) return;
   try {
-    let res = await fetch(${API_URL}/api/auth/login, {
+    let res = await fetch(`${API_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: 'admin@admin.com', password: pwd })
@@ -3632,7 +3632,7 @@ window.promptAdminPassword = async function() {
       location.href = 'admin.html';
       return;
     }
-    res = await fetch(${API_URL}/api/auth/login, {
+    res = await fetch(`${API_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: 'admin@admin', password: pwd })
@@ -3640,10 +3640,10 @@ window.promptAdminPassword = async function() {
     if (res.ok) {
       location.href = 'admin.html';
     } else {
-      alert('Senha incorreta!');
+      alert("Senha incorreta!");
     }
   } catch(e) {
     console.error(e);
-    alert('Erro de conex„o ao verificar a senha.');
+    alert("Erro de conex√£o ao verificar a senha.");
   }
 };
