@@ -1230,7 +1230,18 @@ def add_bot_tag():
             query = query.filter(db_sql.func.lower(User.setor) == setor.lower())
             
         users_query = query.all()
-        print(f"[BOT/TAGS] Atendentes disponíveis para filial='{filial}' setor='{setor}': {[u.name for u in users_query]}")
+        
+        # Se não há atendentes disponíveis, tenta buscar todos os atendentes ignorando a disponibilidade
+        if not users_query:
+            print("[BOT/TAGS] Nenhum atendente disponível encontrado. Forçando atribuição a qualquer atendente da fila.")
+            query_all = User.query.filter(User.role == 'user')
+            if filial:
+                query_all = query_all.filter(db_sql.func.lower(User.filial) == filial.lower())
+            if setor:
+                query_all = query_all.filter(db_sql.func.lower(User.setor) == setor.lower())
+            users_query = query_all.all()
+
+        print(f"[BOT/TAGS] Atendentes encontrados para filial='{filial}' setor='{setor}': {[u.name for u in users_query]}")
         
         if users_query:
             import random
