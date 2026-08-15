@@ -2806,9 +2806,11 @@ async function showNewChat() {
   document.getElementById('newChatNumber').value = '';
   document.getElementById('newChatReason').value = 'Olá!';
   
-  const select = document.getElementById('newChatContactSelect');
-  if (select) {
-    select.innerHTML = '<option value="">Carregando agenda...</option>';
+  const contactInput = document.getElementById('newChatContactSelect');
+  const datalist = document.getElementById('newChatContactList');
+  if (contactInput && datalist) {
+    contactInput.value = '';
+    datalist.innerHTML = '';
     
     try {
       const response = await fetch(`${API_URL}/api/agenda`, {
@@ -2817,16 +2819,14 @@ async function showNewChat() {
       
       if (response.ok) {
         const agendaContacts = await response.json();
-        select.innerHTML = '<option value="">-- Selecione ou digite o número abaixo --</option>';
         
         agendaContacts.forEach(c => {
           const opt = document.createElement('option');
-          opt.value = c.phone;
-          opt.textContent = `${c.name} (${c.phone})`;
-          select.appendChild(opt);
+          opt.value = `${c.phone} - ${c.name}`;
+          datalist.appendChild(opt);
         });
       } else {
-        select.innerHTML = '<option value="">Erro ao carregar agenda</option>';
+        console.error('Erro ao carregar agenda');
       }
     } catch (err) {
       console.error('Erro ao buscar agenda:', err);
@@ -2969,17 +2969,35 @@ document.addEventListener('click', (e) => {
 });
 
 // ======== LIGHTBOX ========
+let lbZoom = 1;
+let lbIsDragging = false;
+let lbStartX = 0, lbStartY = 0;
+let lbTranslateX = 0, lbTranslateY = 0;
+
+function updateLightboxTransform() {
+  const img = document.getElementById('lightboxImg');
+  if (img) {
+    img.style.transform = `translate(${lbTranslateX}px, ${lbTranslateY}px) scale(${lbZoom})`;
+  }
+}
+
 function openLightbox(src) {
   const overlay = document.getElementById('imageLightbox');
   const img = document.getElementById('lightboxImg');
   if (overlay && img) {
     img.src = src;
+    lbZoom = 1;
+    lbTranslateX = 0;
+    lbTranslateY = 0;
+    img.style.cursor = 'grab';
+    img.style.transition = 'transform 0.1s ease';
+    updateLightboxTransform();
     overlay.style.display = 'flex';
   }
 }
 
 function closeLightbox(e) {
-  if (!e || e.target.id === 'imageLightbox' || e.target.classList.contains('lightbox-close')) {
+  if (!e || e.target.id === 'imageLightbox' || e.target.id === 'lightboxToolbar' || e.target.classList.contains('lightbox-close')) {
     const overlay = document.getElementById('imageLightbox');
     if (overlay) {
       overlay.style.display = 'none';
@@ -2987,6 +3005,63 @@ function closeLightbox(e) {
     }
   }
 }
+
+function zoomLightbox(step) {
+  lbZoom += step;
+  if (lbZoom < 0.1) lbZoom = 0.1;
+  updateLightboxTransform();
+}
+
+function resetLightboxZoom() {
+  lbZoom = 1;
+  lbTranslateX = 0;
+  lbTranslateY = 0;
+  updateLightboxTransform();
+}
+
+document.addEventListener('wheel', (e) => {
+  const overlay = document.getElementById('imageLightbox');
+  if (overlay && overlay.style.display === 'flex') {
+    e.preventDefault();
+    if (e.deltaY < 0) {
+      zoomLightbox(0.15);
+    } else {
+      zoomLightbox(-0.15);
+    }
+  }
+}, { passive: false });
+
+(function initLightboxDrag() {
+  const lightboxImg = document.getElementById('lightboxImg');
+  if (lightboxImg) {
+    lightboxImg.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      lbIsDragging = true;
+      lbStartX = e.clientX - lbTranslateX;
+      lbStartY = e.clientY - lbTranslateY;
+      lightboxImg.style.cursor = 'grabbing';
+      lightboxImg.style.transition = 'none';
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!lbIsDragging) return;
+      const overlay = document.getElementById('imageLightbox');
+      if (overlay && overlay.style.display === 'flex') {
+        lbTranslateX = e.clientX - lbStartX;
+        lbTranslateY = e.clientY - lbStartY;
+        updateLightboxTransform();
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      lbIsDragging = false;
+      if (lightboxImg) {
+        lightboxImg.style.cursor = 'grab';
+        lightboxImg.style.transition = 'transform 0.1s ease';
+      }
+    });
+  }
+})();
 
 // ─── Apagar Chat (Admin/Gestor) ─────────────────────────────────────────────
 async function deleteCurrentChat() {

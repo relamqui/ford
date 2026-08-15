@@ -458,10 +458,10 @@
     <div style="padding: 20px;">
       <div style="margin-bottom: 15px;">
         <label style="display:block;margin-bottom:5px;font-size:12px;color:var(--text-muted)">Selecionar Contato Salvo (Opcional)</label>
-        <select id="newChatContactSelect" onchange="if(this.value) document.getElementById('newChatNumber').value = this.value;"
+        <input list="newChatContactList" id="newChatContactSelect" placeholder="-- Busque por nome ou número --" 
+          oninput="const match = this.value.match(/^(\d+)/); if(match) document.getElementById('newChatNumber').value = match[1];"
           style="width:100%;padding:10px;background:#2a3942;border:1px solid #3b4a54;border-radius:8px;color:white;outline:none;margin-bottom:15px;">
-          <option value="">-- Selecione um contato --</option>
-        </select>
+        <datalist id="newChatContactList"></datalist>
         
         <label style="display:block;margin-bottom:5px;font-size:12px;color:var(--text-muted)">Número (com DDD e DDI, Ex: 553599999999)</label>
         <input type="text" id="newChatNumber" placeholder="Ex: 553599999999" 
@@ -557,8 +557,13 @@
 
 <!-- Lightbox Modal -->
 <div id="imageLightbox" class="lightbox-overlay" style="display: none;" onclick="closeLightbox(event)">
+  <div id="lightboxToolbar" style="position: absolute; top: 20px; right: 80px; z-index: 10010; display: flex; gap: 10px;">
+    <button onclick="zoomLightbox(0.25)" style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-size: 18px; font-weight: bold;">+</button>
+    <button onclick="zoomLightbox(-0.25)" style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-size: 18px; font-weight: bold;">-</button>
+    <button onclick="resetLightboxZoom()" style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-size: 14px;">Resetar</button>
+  </div>
   <span class="lightbox-close" onclick="closeLightbox(event)">&times;</span>
-  <img id="lightboxImg" class="lightbox-content" src="" />
+  <img id="lightboxImg" class="lightbox-content" src="" style="transition: transform 0.1s ease; transform-origin: center; cursor: grab;" />
 </div>
 
 <!-- Modal Cortar Imagem -->
