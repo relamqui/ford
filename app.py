@@ -1126,10 +1126,12 @@ def add_bot_tag():
     if not phone or not inst:
         return jsonify({'error': 'phone e instance são obrigatórios'}), 400
         
+    # Garante que tag no formato "Atendente: ..." não seja interpretada como filial:setor
     if custom_tag and ':' in custom_tag and not (filial and setor):
-        partes = custom_tag.split(':', 1)
-        filial = partes[0].strip()
-        setor = partes[1].strip()
+        if not str(custom_tag).strip().lower().startswith('atendente:'):
+            partes = custom_tag.split(':', 1)
+            filial = partes[0].strip()
+            setor = partes[1].strip()
         
     phone = normalize_br_phone(str(phone).strip())
     inst = str(inst).strip()
@@ -1162,11 +1164,21 @@ def add_bot_tag():
         db_sql.session.add(contact)
         db_sql.session.flush()
         
-    # Se o contato já está em atendimento, ignora a requisição para evitar sobreposição de tags ou atendentes
+    # --- REGRA PRINCIPAL: Se o número já está em atendimento, não faz NADA ---
+    # Verifica tanto o campo assigned_to quanto tags de atendente existentes
     forcar_fila = nome_atendente and str(nome_atendente).lower().strip() == 'fila'
-    if contact.assigned_to and not forcar_fila:
-        print(f"[BOT/TAGS] Contato {contact.id} já em atendimento ({contact.assigned_name}). Ignorando requisição.")
-        return jsonify({'success': True, 'message': 'Contato já em atendimento.', 'tags': list(contact.tags or [])})
+    existing_tags = list(contact.tags or [])
+    ja_tem_atendente_tag = any(
+        isinstance(t, str) and t.strip().lower().startswith('atendente:')
+        for t in existing_tags
+    )
+    ja_em_atendimento = bool(contact.assigned_to) or ja_tem_atendente_tag
+    
+    if ja_em_atendimento and not forcar_fila:
+        print(f"[BOT/TAGS] BLOQUEADO: Contato {contact.id} já em atendimento "
+              f"(assigned_to={contact.assigned_to}, tag_atendente={ja_tem_atendente_tag}). "
+              f"Ignorando requisição para evitar troca de atendente.")
+        return jsonify({'success': True, 'message': 'Contato já em atendimento. Nenhuma alteração feita.', 'tags': existing_tags})
 
     current_tags = list(contact.tags or [])
     added = False
