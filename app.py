@@ -1162,6 +1162,12 @@ def add_bot_tag():
         db_sql.session.add(contact)
         db_sql.session.flush()
         
+    # Se o contato já está em atendimento, ignora a requisição para evitar sobreposição de tags ou atendentes
+    forcar_fila = nome_atendente and str(nome_atendente).lower().strip() == 'fila'
+    if contact.assigned_to and not forcar_fila:
+        print(f"[BOT/TAGS] Contato {contact.id} já em atendimento ({contact.assigned_name}). Ignorando requisição.")
+        return jsonify({'success': True, 'message': 'Contato já em atendimento.', 'tags': list(contact.tags or [])})
+
     current_tags = list(contact.tags or [])
     added = False
     
