@@ -1165,9 +1165,11 @@ def add_bot_tag():
         db_sql.session.flush()
         
     # --- REGRA PRINCIPAL: Se o número já está em atendimento, não faz NADA ---
-    # Verifica tanto o campo assigned_to quanto tags de atendente existentes
+    # Força refresh das tags do banco para garantir dados atuais
+    db_sql.session.refresh(contact)
     forcar_fila = nome_atendente and str(nome_atendente).lower().strip() == 'fila'
     existing_tags = list(contact.tags or [])
+    
     ja_tem_atendente_tag = any(
         isinstance(t, str) and t.strip().lower().startswith('atendente:')
         for t in existing_tags
