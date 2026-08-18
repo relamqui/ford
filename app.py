@@ -1200,11 +1200,19 @@ def add_bot_tag():
         atendente_user = None
         
         if not (nome_atendente and str(nome_atendente).lower().strip() == 'fila'):
-            # 1. Tenta achar o atendente pelo e-mail (usando o valor da tag)
+            # 1. Tenta achar o atendente pelo e-mail ou nome (usando o valor da tag)
             if custom_tag:
-                atendente_user = User.query.filter(db_sql.func.lower(User.email) == str(custom_tag).lower().strip()).first()
+                tag_str = str(custom_tag).strip().lower()
+                if tag_str.startswith('atendente:'):
+                    email_or_name = str(custom_tag).split(':', 1)[1].strip().lower()
+                    atendente_user = User.query.filter(
+                        (db_sql.func.lower(User.email) == email_or_name) |
+                        (db_sql.func.lower(User.name) == email_or_name)
+                    ).first()
+                else:
+                    atendente_user = User.query.filter(db_sql.func.lower(User.email) == tag_str).first()
                 
-            # 2. Se não achou pelo e-mail, tenta achar pelo nome (campo atendente)
+            # 2. Se não achou pelo e-mail/nome da tag, tenta achar pelo nome (campo atendente)
             if not atendente_user and nome_atendente:
                 atendente_user = User.query.filter(db_sql.func.lower(User.name) == str(nome_atendente).lower().strip()).first()
             
@@ -1248,9 +1256,16 @@ def add_bot_tag():
             print(f"[BOT/TAGS] AVISO: Atendente '{nome_atendente}' não encontrado na base para atribuição específica.")
         
     # --- Início da Lógica de Distribuição Sequencial (Round-Robin) ---
+    # Se a requisição já veio com uma tag de atendente, não coloca na fila de distribuição
+    has_atendente_tag = False
+    if custom_tag and str(custom_tag).strip().lower().startswith('atendente:'):
+        has_atendente_tag = True
+        print(f"[BOT/TAGS] Tag de atendente detectada na requisição ('{custom_tag}'). Ignorando round-robin para evitar duplicação.")
+
     # Se nome=fila, força redistribuição mesmo que o contato já tenha atendente
     forcar_fila = nome_atendente and str(nome_atendente).lower().strip() == 'fila'
-    if not contact.assigned_to or forcar_fila:
+    
+    if not has_atendente_tag and (not contact.assigned_to or forcar_fila):
         # Reseta atendente anterior se veio como fila
         if forcar_fila and contact.assigned_to:
             print(f"[BOT/TAGS] Modo FILA: redistribuindo contato que já estava com '{contact.assigned_name}'")
